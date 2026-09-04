@@ -49,3 +49,6 @@ app.*.map.json
 
 # Local workspace configurations
 .agents/
+relay_ui/
+replay_ui
+replay_ui/
