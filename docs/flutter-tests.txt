@@ -1,0 +1,14 @@
+00:00 +0: loading /workspace/scratch/d138f2582233/relay/test/relay_ui_test.dart
+00:00 +0: (setUpAll)
+00:00 +0: inbox, distinct thread, navigation, themes and settings render
+00:02 +1: rapid sends preserve IDs and conversations keep separate histories
+00:03 +2: hold recognizer survives recording UI then release sends once
+00:03 +3: slide left cancels; slide up locks; releasing locked note does not send
+00:03 +4: clearing resets timeline item count and new messages still insert
+00:04 +5: small phone onboarding and country selection remain readable
+00:04 +6: keyboard resize keeps latest message within timeline
+00:04 +7: new group, inbox filters and search update their visible content
+00:05 +8: pausing and seeking retain playback position and speed
+00:05 +9: capture coordinated insertion and recording frames
+00:33 +10: (tearDownAll)
+00:33 +10: All tests passed!
