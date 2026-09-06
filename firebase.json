@@ -1,1 +1,33 @@
-{"flutter":{"platforms":{"android":{"default":{"projectId":"relay-86c7b","appId":"1:648116014297:android:a276517f41bae2e492c2c8","fileOutput":"android/app/google-services.json"}},"ios":{"default":{"projectId":"relay-86c7b","appId":"1:648116014297:ios:de787428e0d6a59492c2c8","uploadDebugSymbols":false,"fileOutput":"ios/Runner/GoogleService-Info.plist"}},"dart":{"lib/firebase_options.dart":{"projectId":"relay-86c7b","configurations":{"android":"1:648116014297:android:a276517f41bae2e492c2c8","ios":"1:648116014297:ios:de787428e0d6a59492c2c8"}}}}}}
+{
+  "firestore": {
+    "rules": "firestore.rules"
+  },
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "relay-86c7b",
+          "appId": "1:648116014297:android:a276517f41bae2e492c2c8",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "ios": {
+        "default": {
+          "projectId": "relay-86c7b",
+          "appId": "1:648116014297:ios:de787428e0d6a59492c2c8",
+          "uploadDebugSymbols": false,
+          "fileOutput": "ios/Runner/GoogleService-Info.plist"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "relay-86c7b",
+          "configurations": {
+            "android": "1:648116014297:android:a276517f41bae2e492c2c8",
+            "ios": "1:648116014297:ios:de787428e0d6a59492c2c8"
+          }
+        }
+      }
+    }
+  }
+}

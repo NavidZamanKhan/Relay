@@ -377,7 +377,12 @@ final class AuthBloc extends Bloc<AuthEvent, AuthState> {
             await _authRepository.signInWithCredential(event.credential);
         final uid = credential.user?.uid;
         if (uid != null && _userRepository != null) {
-          final existingProfile = await _userRepository.getUserProfile(uid);
+          UserProfile? existingProfile;
+          try {
+            existingProfile = await _userRepository.getUserProfile(uid);
+          } catch (_) {
+            // Safe fallback for fresh users
+          }
           if (existingProfile != null && existingProfile.displayName.isNotEmpty) {
             emit(
               state.copyWith(
@@ -457,41 +462,11 @@ final class AuthBloc extends Bloc<AuthEvent, AuthState> {
       return;
     }
 
+    UserCredential credential;
     try {
-      final credential = await _authRepository.signInWithOtp(
+      credential = await _authRepository.signInWithOtp(
         verificationId: verificationId,
         smsCode: state.otp,
-      );
-      _resendTimer?.cancel();
-      final uid = credential.user?.uid;
-      if (uid != null && _userRepository != null) {
-        final existingProfile = await _userRepository.getUserProfile(uid);
-        if (existingProfile != null && existingProfile.displayName.isNotEmpty) {
-          emit(
-            state.copyWith(
-              step: AuthStep.complete,
-              displayName: existingProfile.displayName,
-              about: existingProfile.about,
-              phone: existingProfile.phoneNumber.isNotEmpty
-                  ? existingProfile.phoneNumber
-                  : state.phone,
-              publicKey: existingProfile.publicKey,
-              userId: uid,
-              isVerifying: false,
-              clearError: true,
-            ),
-          );
-          return;
-        }
-      }
-
-      emit(
-        state.copyWith(
-          step: AuthStep.profile,
-          isVerifying: false,
-          userId: uid,
-          clearError: true,
-        ),
       );
     } on FirebaseAuthException catch (e) {
       emit(
@@ -500,6 +475,7 @@ final class AuthBloc extends Bloc<AuthEvent, AuthState> {
           errorMessage: e.message ?? 'Invalid code. Please try again.',
         ),
       );
+      return;
     } catch (_) {
       emit(
         state.copyWith(
@@ -507,7 +483,46 @@ final class AuthBloc extends Bloc<AuthEvent, AuthState> {
           errorMessage: 'Verification failed. Please check the code and try again.',
         ),
       );
+      return;
     }
+
+    _resendTimer?.cancel();
+    final uid = credential.user?.uid;
+    UserProfile? existingProfile;
+    if (uid != null && _userRepository != null) {
+      try {
+        existingProfile = await _userRepository.getUserProfile(uid);
+      } catch (_) {
+        // Tolerant of brand-new users or initial replica synchronization
+      }
+    }
+
+    if (existingProfile != null && existingProfile.displayName.isNotEmpty) {
+      emit(
+        state.copyWith(
+          step: AuthStep.complete,
+          displayName: existingProfile.displayName,
+          about: existingProfile.about,
+          phone: existingProfile.phoneNumber.isNotEmpty
+              ? existingProfile.phoneNumber
+              : state.phone,
+          publicKey: existingProfile.publicKey,
+          userId: uid,
+          isVerifying: false,
+          clearError: true,
+        ),
+      );
+      return;
+    }
+
+    emit(
+      state.copyWith(
+        step: AuthStep.profile,
+        isVerifying: false,
+        userId: uid,
+        clearError: true,
+      ),
+    );
   }
 
   void _onPhoneEditRequested(AuthPhoneEditRequested event, Emitter<AuthState> emit) {
@@ -694,39 +709,36 @@ final class AuthBloc extends Bloc<AuthEvent, AuthState> {
 
     emit(state.copyWith(userId: user.uid, isVerifying: true));
 
+    UserProfile? profile;
     try {
-      final profile = await _userRepository?.getUserProfile(user.uid);
-      if (profile != null && profile.displayName.isNotEmpty) {
-        emit(
-          state.copyWith(
-            step: AuthStep.complete,
-            displayName: profile.displayName,
-            about: profile.about,
-            phone: profile.phoneNumber.isNotEmpty
-                ? profile.phoneNumber
-                : (user.phoneNumber ?? state.phone),
-            publicKey: profile.publicKey,
-            userId: user.uid,
-            isVerifying: false,
-            clearError: true,
-          ),
-        );
-      } else {
-        emit(
-          state.copyWith(
-            step: AuthStep.profile,
-            userId: user.uid,
-            phone: user.phoneNumber ?? state.phone,
-            isVerifying: false,
-            clearError: true,
-          ),
-        );
-      }
+      profile = await _userRepository?.getUserProfile(user.uid);
     } catch (_) {
+      // Tolerant of brand-new profiles or initial database synchronization
+    }
+
+    if (profile != null && profile.displayName.isNotEmpty) {
       emit(
         state.copyWith(
-          isVerifying: false,
+          step: AuthStep.complete,
+          displayName: profile.displayName,
+          about: profile.about,
+          phone: profile.phoneNumber.isNotEmpty
+              ? profile.phoneNumber
+              : (user.phoneNumber ?? state.phone),
+          publicKey: profile.publicKey,
           userId: user.uid,
+          isVerifying: false,
+          clearError: true,
+        ),
+      );
+    } else {
+      emit(
+        state.copyWith(
+          step: AuthStep.profile,
+          userId: user.uid,
+          phone: user.phoneNumber ?? state.phone,
+          isVerifying: false,
+          clearError: true,
         ),
       );
     }

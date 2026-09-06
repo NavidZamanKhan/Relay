@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../core/motion/relay_motion.dart';
 import '../../core/theme/relay_colors.dart';
+import '../../core/widgets/relay_button.dart';
 import 'auth_bloc.dart';
 import 'auth_scaffold.dart';
 
@@ -22,6 +23,7 @@ class _OtpPageState extends State<OtpPage> {
   @override
   void initState() {
     super.initState();
+    _controller.text = context.read<AuthBloc>().state.otp;
     WidgetsBinding.instance.addPostFrameCallback(
       (_) => _focusNode.requestFocus(),
     );
@@ -46,11 +48,21 @@ class _OtpPageState extends State<OtpPage> {
             context.read<AuthBloc>().add(const AuthPhoneEditRequested()),
         icon: const Icon(CupertinoIcons.chevron_left, size: 22),
       ),
-      child: BlocBuilder<AuthBloc, AuthState>(
+      child: BlocConsumer<AuthBloc, AuthState>(
+        listenWhen: (a, b) => a.otp != b.otp,
+        listener: (context, state) {
+          if (_controller.text != state.otp) {
+            _controller.value = TextEditingValue(
+              text: state.otp,
+              selection: TextSelection.collapsed(offset: state.otp.length),
+            );
+          }
+        },
         buildWhen: (a, b) =>
             a.otp != b.otp ||
             a.isVerifying != b.isVerifying ||
-            a.resendSeconds != b.resendSeconds,
+            a.resendSeconds != b.resendSeconds ||
+            a.errorMessage != b.errorMessage,
         builder: (context, state) {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -184,6 +196,17 @@ class _OtpPageState extends State<OtpPage> {
                 Text(
                   'Enter the 6-digit code sent to your phone.',
                   style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+              if (state.otp.length == 6) ...[
+                const SizedBox(height: 24),
+                RelayButton(
+                  label: state.isVerifying ? 'Verifying...' : 'Verify code',
+                  onPressed: state.isVerifying
+                      ? null
+                      : () => context
+                          .read<AuthBloc>()
+                          .add(const AuthOtpVerified()),
                 ),
               ],
             ],
