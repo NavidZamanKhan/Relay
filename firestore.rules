@@ -1,0 +1,32 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Users Collection Security Rules
+    match /users/{userId} {
+      // Any authenticated user can read public profiles to initiate chats and verify public keys
+      allow read: if request.auth != null;
+
+      // Users can only create or update their OWN profile document
+      allow create, update: if request.auth != null
+        && request.auth.uid == userId
+        && request.resource.data.uid == userId
+        && request.resource.data.phoneNumber is string
+        && request.resource.data.displayName is string
+        && request.resource.data.displayName.size() > 0
+        && request.resource.data.displayName.size() <= 32
+        && request.resource.data.about is string
+        && request.resource.data.about.size() <= 90
+        && request.resource.data.publicKey is string
+        && request.resource.data.publicKey.size() <= 100;
+
+      // Prevent client-side document deletion
+      allow delete: if false;
+    }
+
+    // Default deny all other collections
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

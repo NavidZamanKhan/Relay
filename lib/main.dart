@@ -4,8 +4,10 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'app.dart';
 import 'app_bloc.dart';
+import 'core/crypto/crypto_service.dart';
 import 'features/auth/auth_bloc.dart';
 import 'features/auth/repositories/firebase_auth_repository.dart';
+import 'features/auth/repositories/firestore_user_repository.dart';
 import 'features/chats/chat_bloc.dart';
 import 'firebase_options.dart';
 
@@ -15,6 +17,9 @@ Future<void> main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
   final authRepository = FirebaseAuthRepository();
+  final userRepository = FirestoreUserRepository();
+  final cryptoService = CryptoService();
+
   runApp(
     MultiBlocProvider(
       providers: [
@@ -22,6 +27,8 @@ Future<void> main() async {
         BlocProvider(
           create: (_) => AuthBloc(
             authRepository: authRepository,
+            userRepository: userRepository,
+            cryptoService: cryptoService,
             previewAuthenticated: false,
           ),
         ),

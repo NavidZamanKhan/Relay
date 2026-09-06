@@ -4,7 +4,10 @@ import 'package:equatable/equatable.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../core/crypto/crypto_service.dart';
+import 'models/user_profile.dart';
 import 'repositories/i_auth_repository.dart';
+import 'repositories/i_user_repository.dart';
 
 // --- Auth Events ---
 
@@ -139,6 +142,7 @@ final class AuthState extends Equatable {
     this.resendToken,
     this.errorMessage,
     this.userId,
+    this.publicKey,
   });
 
   final AuthStep step;
@@ -155,6 +159,7 @@ final class AuthState extends Equatable {
   final int? resendToken;
   final String? errorMessage;
   final String? userId;
+  final String? publicKey;
 
   AuthState copyWith({
     AuthStep? step,
@@ -172,6 +177,7 @@ final class AuthState extends Equatable {
     String? errorMessage,
     bool clearError = false,
     String? userId,
+    String? publicKey,
   }) {
     return AuthState(
       step: step ?? this.step,
@@ -188,6 +194,7 @@ final class AuthState extends Equatable {
       resendToken: resendToken ?? this.resendToken,
       errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
       userId: userId ?? this.userId,
+      publicKey: publicKey ?? this.publicKey,
     );
   }
 
@@ -207,6 +214,7 @@ final class AuthState extends Equatable {
         resendToken,
         errorMessage,
         userId,
+        publicKey,
       ];
 }
 
@@ -215,8 +223,12 @@ final class AuthState extends Equatable {
 final class AuthBloc extends Bloc<AuthEvent, AuthState> {
   AuthBloc({
     IAuthRepository? authRepository,
+    IUserRepository? userRepository,
+    CryptoService? cryptoService,
     bool previewAuthenticated = true,
   })  : _authRepository = authRepository,
+        _userRepository = userRepository,
+        _cryptoService = cryptoService,
         super(
           AuthState(
             step: previewAuthenticated ? AuthStep.complete : AuthStep.phone,
@@ -241,6 +253,8 @@ final class AuthBloc extends Bloc<AuthEvent, AuthState> {
   }
 
   final IAuthRepository? _authRepository;
+  final IUserRepository? _userRepository;
+  final CryptoService? _cryptoService;
   Timer? _resendTimer;
   int _verificationEpoch = 0;
 
@@ -473,15 +487,82 @@ final class AuthBloc extends Bloc<AuthEvent, AuthState> {
     }
   }
 
-  void _onProfileUpdated(AuthProfileUpdated event, Emitter<AuthState> emit) {
-    if (event.name.trim().isEmpty) return;
-    emit(
-      state.copyWith(
-        step: AuthStep.complete,
-        displayName: event.name,
-        about: event.about,
-      ),
-    );
+  Future<void> _onProfileUpdated(
+    AuthProfileUpdated event,
+    Emitter<AuthState> emit,
+  ) async {
+    final sanitizedName = event.name.trim();
+    final sanitizedAbout = event.about.trim();
+
+    if (sanitizedName.isEmpty) {
+      emit(
+        state.copyWith(
+          errorMessage: 'Display name cannot be empty.',
+        ),
+      );
+      return;
+    }
+
+    emit(state.copyWith(isVerifying: true, clearError: true));
+
+    if (_userRepository == null || _cryptoService == null) {
+      // Mock / preview mode fallback for tests
+      emit(
+        state.copyWith(
+          step: AuthStep.complete,
+          displayName: sanitizedName,
+          about: sanitizedAbout,
+          isVerifying: false,
+          clearError: true,
+        ),
+      );
+      return;
+    }
+
+    try {
+      final uid = _authRepository?.currentUser?.uid ?? state.userId;
+      if (uid == null) {
+        emit(
+          state.copyWith(
+            isVerifying: false,
+            errorMessage: 'Authentication session not found. Please log in again.',
+          ),
+        );
+        return;
+      }
+
+      // Securely retrieve or generate X25519 identity public key
+      final publicKey = await _cryptoService.getOrCreatePublicKey();
+
+      final profile = UserProfile(
+        uid: uid,
+        phoneNumber: _authRepository?.currentUser?.phoneNumber ?? state.phone,
+        displayName: sanitizedName,
+        about: sanitizedAbout,
+        publicKey: publicKey,
+      );
+
+      await _userRepository.saveUserProfile(profile);
+
+      emit(
+        state.copyWith(
+          step: AuthStep.complete,
+          displayName: sanitizedName,
+          about: sanitizedAbout,
+          publicKey: publicKey,
+          userId: uid,
+          isVerifying: false,
+          clearError: true,
+        ),
+      );
+    } catch (_) {
+      emit(
+        state.copyWith(
+          isVerifying: false,
+          errorMessage: 'Unable to save profile. Please check your connection.',
+        ),
+      );
+    }
   }
 
   void _onRestarted(AuthRestarted event, Emitter<AuthState> emit) {
@@ -503,6 +584,7 @@ final class AuthBloc extends Bloc<AuthEvent, AuthState> {
   ) async {
     _resendTimer?.cancel();
     await _authRepository?.signOut();
+    await _cryptoService?.clearKeys();
     emit(
       state.copyWith(
         step: AuthStep.phone,

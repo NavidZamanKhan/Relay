@@ -46,108 +46,132 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
           : null,
       title: widget.editing ? 'Your profile.' : 'Make yourself at home.',
       subtitle: 'Keep it simple. You can change all of this later.',
-      child: Column(
-        children: [
-          Center(
-            child: GestureDetector(
-              onTap: () => _avatarSheet(context),
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Container(
-                    width: 92,
-                    height: 92,
-                    decoration: const BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [RelayColors.coralWash, RelayColors.coral],
-                      ),
-                    ),
-                    child: const Center(
-                      child: Text(
-                        'N',
-                        style: TextStyle(
-                          fontSize: 38,
-                          fontWeight: FontWeight.w800,
-                          color: RelayColors.ink,
+      child: BlocConsumer<AuthBloc, AuthState>(
+        listener: (context, state) {
+          if (widget.editing && state.step == AuthStep.complete && !state.isVerifying) {
+            Navigator.pop(context);
+          }
+        },
+        builder: (context, state) {
+          return Column(
+            children: [
+              Center(
+                child: GestureDetector(
+                  onTap: () => _avatarSheet(context),
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Container(
+                        width: 92,
+                        height: 92,
+                        decoration: const BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [RelayColors.coralWash, RelayColors.coral],
+                          ),
+                        ),
+                        child: Center(
+                          child: Text(
+                            _name.text.trim().isNotEmpty
+                                ? _name.text.trim().substring(0, 1).toUpperCase()
+                                : 'R',
+                            style: const TextStyle(
+                              fontSize: 38,
+                              fontWeight: FontWeight.w800,
+                              color: RelayColors.ink,
+                            ),
+                          ),
                         ),
                       ),
-                    ),
-                  ),
-                  Positioned(
-                    right: -2,
-                    bottom: 2,
-                    child: Container(
-                      width: 34,
-                      height: 34,
-                      decoration: BoxDecoration(
-                        color: RelayColors.ink,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: Theme.of(context).scaffoldBackgroundColor,
-                          width: 3,
+                      Positioned(
+                        right: -2,
+                        bottom: 2,
+                        child: Container(
+                          width: 34,
+                          height: 34,
+                          decoration: BoxDecoration(
+                            color: RelayColors.ink,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: Theme.of(context).scaffoldBackgroundColor,
+                              width: 3,
+                            ),
+                          ),
+                          child: const Icon(
+                            CupertinoIcons.camera,
+                            color: RelayColors.paper,
+                            size: 16,
+                          ),
                         ),
                       ),
-                      child: const Icon(
-                        CupertinoIcons.camera,
-                        color: RelayColors.paper,
-                        size: 16,
-                      ),
-                    ),
+                    ],
                   ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 30),
-          ValueListenableBuilder<TextEditingValue>(
-            valueListenable: _name,
-            builder: (context, value, _) => TextField(
-              controller: _name,
-              maxLength: 32,
-              textCapitalization: TextCapitalization.words,
-              decoration: InputDecoration(
-                labelText: 'Display name',
-                counterText: '${value.text.characters.length}/32',
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _about,
-            maxLength: 90,
-            minLines: 2,
-            maxLines: 3,
-            decoration: const InputDecoration(
-              labelText: 'About',
-              alignLabelWithHint: true,
-            ),
-          ),
-          const SizedBox(height: 24),
-          RelayButton(
-            label: widget.editing ? 'Save profile' : 'Complete setup',
-            icon: CupertinoIcons.check_mark,
-            onPressed: () {
-              if (_name.text.trim().isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Add a display name to continue.'),
-                  ),
-                );
-                return;
-              }
-              context.read<AuthBloc>().add(
-                AuthProfileUpdated(
-                  name: _name.text.trim(),
-                  about: _about.text.trim(),
                 ),
-              );
-              if (widget.editing) Navigator.pop(context);
-            },
-          ),
-        ],
+              ),
+              const SizedBox(height: 30),
+              ValueListenableBuilder<TextEditingValue>(
+                valueListenable: _name,
+                builder: (context, value, _) => TextField(
+                  controller: _name,
+                  maxLength: 32,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: InputDecoration(
+                    labelText: 'Display name',
+                    counterText: '${value.text.characters.length}/32',
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _about,
+                maxLength: 90,
+                minLines: 2,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: 'About',
+                  alignLabelWithHint: true,
+                ),
+              ),
+              if (state.errorMessage != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  state.errorMessage!,
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: RelayColors.coralDeep),
+                ),
+              ],
+              const SizedBox(height: 24),
+              RelayButton(
+                label: state.isVerifying
+                    ? 'Saving profile…'
+                    : (widget.editing ? 'Save profile' : 'Complete setup'),
+                icon: state.isVerifying ? null : CupertinoIcons.check_mark,
+                onPressed: state.isVerifying
+                    ? () {}
+                    : () {
+                        if (_name.text.trim().isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Add a display name to continue.'),
+                            ),
+                          );
+                          return;
+                        }
+                        context.read<AuthBloc>().add(
+                              AuthProfileUpdated(
+                                name: _name.text.trim(),
+                                about: _about.text.trim(),
+                              ),
+                            );
+                      },
+              ),
+            ],
+          );
+        },
       ),
     );
   }
