@@ -46,5 +46,10 @@ class FirebaseAuthRepository implements IAuthRepository {
   }
 
   @override
+  Future<UserCredential> signInWithCredential(AuthCredential credential) {
+    return _auth.signInWithCredential(credential);
+  }
+
+  @override
   Future<void> signOut() => _auth.signOut();
 }

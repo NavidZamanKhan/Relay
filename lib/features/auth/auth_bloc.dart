@@ -122,6 +122,14 @@ final class _AuthTimeout extends AuthEvent {
   List<Object?> get props => [verificationId];
 }
 
+final class _AuthUserChanged extends AuthEvent {
+  const _AuthUserChanged(this.user);
+  final User? user;
+
+  @override
+  List<Object?> get props => [user?.uid];
+}
+
 // --- Auth State ---
 
 enum AuthStep { phone, otp, profile, complete }
@@ -250,11 +258,19 @@ final class AuthBloc extends Bloc<AuthEvent, AuthState> {
     on<AuthRestarted>(_onRestarted);
     on<AuthSignOutRequested>(_onSignOutRequested);
     on<AuthErrorDismissed>(_onErrorDismissed);
+    on<_AuthUserChanged>(_onUserChanged);
+
+    if (_authRepository != null && !previewAuthenticated) {
+      _authStateSubscription = _authRepository.authStateChanges.listen((user) {
+        add(_AuthUserChanged(user));
+      });
+    }
   }
 
   final IAuthRepository? _authRepository;
   final IUserRepository? _userRepository;
   final CryptoService? _cryptoService;
+  StreamSubscription<User?>? _authStateSubscription;
   Timer? _resendTimer;
   int _verificationEpoch = 0;
 
@@ -355,6 +371,42 @@ final class AuthBloc extends Bloc<AuthEvent, AuthState> {
     Emitter<AuthState> emit,
   ) async {
     _resendTimer?.cancel();
+    if (_authRepository != null) {
+      try {
+        final credential =
+            await _authRepository.signInWithCredential(event.credential);
+        final uid = credential.user?.uid;
+        if (uid != null && _userRepository != null) {
+          final existingProfile = await _userRepository.getUserProfile(uid);
+          if (existingProfile != null && existingProfile.displayName.isNotEmpty) {
+            emit(
+              state.copyWith(
+                step: AuthStep.complete,
+                displayName: existingProfile.displayName,
+                about: existingProfile.about,
+                phone: existingProfile.phoneNumber.isNotEmpty
+                    ? existingProfile.phoneNumber
+                    : state.phone,
+                publicKey: existingProfile.publicKey,
+                userId: uid,
+                isVerifying: false,
+                clearError: true,
+              ),
+            );
+            return;
+          }
+        }
+        emit(
+          state.copyWith(
+            step: AuthStep.profile,
+            isVerifying: false,
+            userId: uid,
+            clearError: true,
+          ),
+        );
+        return;
+      } catch (_) {}
+    }
     emit(
       state.copyWith(
         step: AuthStep.profile,
@@ -411,11 +463,33 @@ final class AuthBloc extends Bloc<AuthEvent, AuthState> {
         smsCode: state.otp,
       );
       _resendTimer?.cancel();
+      final uid = credential.user?.uid;
+      if (uid != null && _userRepository != null) {
+        final existingProfile = await _userRepository.getUserProfile(uid);
+        if (existingProfile != null && existingProfile.displayName.isNotEmpty) {
+          emit(
+            state.copyWith(
+              step: AuthStep.complete,
+              displayName: existingProfile.displayName,
+              about: existingProfile.about,
+              phone: existingProfile.phoneNumber.isNotEmpty
+                  ? existingProfile.phoneNumber
+                  : state.phone,
+              publicKey: existingProfile.publicKey,
+              userId: uid,
+              isVerifying: false,
+              clearError: true,
+            ),
+          );
+          return;
+        }
+      }
+
       emit(
         state.copyWith(
           step: AuthStep.profile,
           isVerifying: false,
-          userId: credential.user?.uid,
+          userId: uid,
           clearError: true,
         ),
       );
@@ -599,6 +673,65 @@ final class AuthBloc extends Bloc<AuthEvent, AuthState> {
     emit(state.copyWith(clearError: true));
   }
 
+  Future<void> _onUserChanged(
+    _AuthUserChanged event,
+    Emitter<AuthState> emit,
+  ) async {
+    final user = event.user;
+    if (user == null) {
+      if (state.step != AuthStep.phone) {
+        emit(
+          state.copyWith(
+            step: AuthStep.phone,
+            otp: '',
+            isVerifying: false,
+            clearError: true,
+          ),
+        );
+      }
+      return;
+    }
+
+    emit(state.copyWith(userId: user.uid, isVerifying: true));
+
+    try {
+      final profile = await _userRepository?.getUserProfile(user.uid);
+      if (profile != null && profile.displayName.isNotEmpty) {
+        emit(
+          state.copyWith(
+            step: AuthStep.complete,
+            displayName: profile.displayName,
+            about: profile.about,
+            phone: profile.phoneNumber.isNotEmpty
+                ? profile.phoneNumber
+                : (user.phoneNumber ?? state.phone),
+            publicKey: profile.publicKey,
+            userId: user.uid,
+            isVerifying: false,
+            clearError: true,
+          ),
+        );
+      } else {
+        emit(
+          state.copyWith(
+            step: AuthStep.profile,
+            userId: user.uid,
+            phone: user.phoneNumber ?? state.phone,
+            isVerifying: false,
+            clearError: true,
+          ),
+        );
+      }
+    } catch (_) {
+      emit(
+        state.copyWith(
+          isVerifying: false,
+          userId: user.uid,
+        ),
+      );
+    }
+  }
+
   void _startResendTimer() {
     _resendTimer?.cancel();
     _resendTimer = Timer.periodic(
@@ -610,6 +743,7 @@ final class AuthBloc extends Bloc<AuthEvent, AuthState> {
   @override
   Future<void> close() {
     _resendTimer?.cancel();
+    _authStateSubscription?.cancel();
     return super.close();
   }
 }

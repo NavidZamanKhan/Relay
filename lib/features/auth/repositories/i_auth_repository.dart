@@ -24,6 +24,9 @@ abstract interface class IAuthRepository {
     required String smsCode,
   });
 
+  /// Signs in directly with a verified credential (e.g. Android auto-retrieval).
+  Future<UserCredential> signInWithCredential(AuthCredential credential);
+
   /// Signs out the active user session.
   Future<void> signOut();
 }
