@@ -9,12 +9,14 @@ import 'auth_scaffold.dart';
 
 class PhoneEntryPage extends StatefulWidget {
   const PhoneEntryPage({super.key});
+
   @override
   State<PhoneEntryPage> createState() => _PhoneEntryPageState();
 }
 
 class _PhoneEntryPageState extends State<PhoneEntryPage> {
-  final _controller = TextEditingController(text: '1712 345 678');
+  final _controller = TextEditingController(text: '650-555-1234');
+
   @override
   void dispose() {
     _controller.dispose();
@@ -23,173 +25,190 @@ class _PhoneEntryPageState extends State<PhoneEntryPage> {
 
   @override
   Widget build(BuildContext context) {
-    final state = context.watch<AuthBloc>().state;
     return AuthScaffold(
       eyebrow: 'Welcome to Relay',
       title: 'A little closer.',
       subtitle:
           'For the small updates, the long stories, and the people in between.',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Your phone number',
-            style: Theme.of(context).textTheme.labelLarge,
-          ),
-          const SizedBox(height: 12),
-          Row(
+      child: BlocConsumer<AuthBloc, AuthState>(
+        listenWhen: (previous, current) =>
+            previous.errorMessage != current.errorMessage &&
+            current.errorMessage != null,
+        listener: (context, state) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(state.errorMessage!)),
+          );
+        },
+        builder: (context, state) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              InkWell(
-                onTap: () => _countries(context),
-                borderRadius: BorderRadius.circular(15),
-                child: Container(
-                  height: 54,
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surface,
-                    borderRadius: BorderRadius.circular(15),
-                    border: Border.all(color: Theme.of(context).dividerColor),
-                  ),
-                  child: Row(
-                    children: [
-                      CountryFlag(iso: state.countryIso),
-                      const SizedBox(width: 8),
-                      Text(
-                        state.countryCode,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
+              Text(
+                'Your phone number',
+                style: Theme.of(context).textTheme.labelLarge,
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Semantics(
+                    button: true,
+                    label: 'Select country, currently ${state.countryCode}',
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(15),
+                      onTap: () => _countries(context),
+                      child: Container(
+                        height: 54,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.surface,
+                          borderRadius: BorderRadius.circular(15),
+                          border: Border.all(color: Theme.of(context).dividerColor),
+                        ),
+                        child: Row(
+                          children: [
+                            CountryFlag(iso: state.countryIso),
+                            const SizedBox(width: 8),
+                            Text(
+                              state.countryCode,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(width: 7),
+                            const Icon(CupertinoIcons.chevron_down, size: 12),
+                          ],
                         ),
                       ),
-                      const SizedBox(width: 7),
-                      const Icon(CupertinoIcons.chevron_down, size: 12),
-                    ],
+                    ),
                   ),
-                ),
+                  const SizedBox(width: 9),
+                  Expanded(
+                    child: TextField(
+                      controller: _controller,
+                      keyboardType: TextInputType.phone,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(r'[0-9 -]')),
+                        LengthLimitingTextInputFormatter(18),
+                      ],
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      decoration: const InputDecoration(hintText: 'Phone number'),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 9),
-              Expanded(
-                child: TextField(
-                  controller: _controller,
-                  keyboardType: TextInputType.phone,
-                  inputFormatters: [
-                    FilteringTextInputFormatter.allow(RegExp(r'[0-9 ]')),
-                    LengthLimitingTextInputFormatter(18),
-                  ],
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
-                  decoration: const InputDecoration(hintText: 'Phone number'),
+              const SizedBox(height: 16),
+              Text(
+                'We’ll send a 6-digit SMS code. Standard carrier rates may apply.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(height: 1.6),
+              ),
+              const SizedBox(height: 28),
+              RelayButton(
+                label: state.isVerifying ? 'Sending code…' : 'Send verification code',
+                icon: state.isVerifying ? null : CupertinoIcons.arrow_right,
+                onPressed: state.isVerifying
+                    ? () {}
+                    : () {
+                        final digits = _controller.text.replaceAll(RegExp(r'[^0-9]'), '');
+                        if (digits.length < 7 || digits.length > 15) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Check your phone number and try again.'),
+                            ),
+                          );
+                          return;
+                        }
+                        context.read<AuthBloc>().add(
+                              AuthPhoneSubmitted(
+                                '${state.countryCode}$digits',
+                              ),
+                            );
+                      },
+              ),
+              const SizedBox(height: 18),
+              Center(
+                child: Text(
+                  'By continuing, you agree to our Terms & Privacy.',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(fontSize: 10.5, height: 1.6),
                 ),
               ),
             ],
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'We’ll send a 6-digit SMS code. Standard carrier rates may apply.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(height: 1.6),
-          ),
-          const SizedBox(height: 28),
-          RelayButton(
-            label: 'Send verification code',
-            icon: CupertinoIcons.arrow_right,
-            onPressed: () {
-              final digits = _controller.text.replaceAll(' ', '');
-              if (digits.length < 7 || digits.length > 15) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Check your phone number and try again.'),
-                  ),
-                );
-                return;
-              }
-              context.read<AuthBloc>().add(
-                AuthPhoneSubmitted(
-                  '${state.countryCode} ${_controller.text.trim()}',
-                ),
-              );
-            },
-          ),
-          const SizedBox(height: 18),
-          Center(
-            child: Text(
-              'By continuing, you agree to our Terms & Privacy.',
-              textAlign: TextAlign.center,
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(fontSize: 10.5, height: 1.6),
-            ),
-          ),
-        ],
+          );
+        },
       ),
     );
   }
 
   void _countries(BuildContext context) => showModalBottomSheet<void>(
-    context: context,
-    showDragHandle: true,
-    isScrollControlled: true,
-    useSafeArea: true,
-    builder: (context) => BlocBuilder<AuthBloc, AuthState>(
-      builder: (context, state) {
-        final countries =
-            const [
-                  ('BD', 'Bangladesh', '+880'),
-                  ('IN', 'India', '+91'),
-                  ('GB', 'United Kingdom', '+44'),
-                  ('US', 'United States', '+1'),
-                ]
+        context: context,
+        showDragHandle: true,
+        isScrollControlled: true,
+        useSafeArea: true,
+        builder: (context) => BlocBuilder<AuthBloc, AuthState>(
+          builder: (context, state) {
+            final countries = const [
+              ('BD', 'Bangladesh', '+880'),
+              ('IN', 'India', '+91'),
+              ('GB', 'United Kingdom', '+44'),
+              ('US', 'United States', '+1'),
+            ]
                 .where(
                   (c) => '${c.$2} ${c.$3}'.toLowerCase().contains(
-                    state.countryQuery.toLowerCase(),
-                  ),
+                        state.countryQuery.toLowerCase(),
+                      ),
                 )
                 .toList();
-        return Padding(
-          padding: EdgeInsets.fromLTRB(
-            22,
-            0,
-            22,
-            24 + MediaQuery.viewInsetsOf(context).bottom,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Choose country',
-                style: Theme.of(context).textTheme.titleLarge,
+            return Padding(
+              padding: EdgeInsets.fromLTRB(
+                22,
+                0,
+                22,
+                24 + MediaQuery.viewInsetsOf(context).bottom,
               ),
-              const SizedBox(height: 16),
-              TextField(
-                onChanged: (v) =>
-                    context.read<AuthBloc>().add(AuthCountrySearched(v)),
-                decoration: const InputDecoration(
-                  hintText: 'Search country or code',
-                  prefixIcon: Icon(CupertinoIcons.search, size: 19),
-                ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Choose country',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    onChanged: (v) =>
+                        context.read<AuthBloc>().add(AuthCountrySearched(v)),
+                    decoration: const InputDecoration(
+                      hintText: 'Search country or code',
+                      prefixIcon: Icon(CupertinoIcons.search, size: 19),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  for (final c in countries)
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: CountryFlag(iso: c.$1),
+                      title: Text(c.$2, style: const TextStyle(fontSize: 14)),
+                      trailing: Text(c.$3),
+                      onTap: () {
+                        context.read<AuthBloc>().add(
+                              AuthCountrySelected(c.$1, c.$3),
+                            );
+                        Navigator.pop(context);
+                      },
+                    ),
+                ],
               ),
-              const SizedBox(height: 12),
-              for (final c in countries)
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: CountryFlag(iso: c.$1),
-                  title: Text(c.$2, style: const TextStyle(fontSize: 14)),
-                  trailing: Text(c.$3),
-                  onTap: () {
-                    context.read<AuthBloc>().add(
-                      AuthCountrySelected(c.$1, c.$3),
-                    );
-                    Navigator.pop(context);
-                  },
-                ),
-            ],
-          ),
-        );
-      },
-    ),
-  );
+            );
+          },
+        ),
+      );
 }
 
 /// Actual vector flag shapes keep country indicators consistent across devices.
@@ -197,23 +216,25 @@ class _PhoneEntryPageState extends State<PhoneEntryPage> {
 class CountryFlag extends StatelessWidget {
   const CountryFlag({super.key, required this.iso});
   final String iso;
+
   @override
   Widget build(BuildContext context) => Semantics(
-    label: iso,
-    child: ClipRRect(
-      borderRadius: BorderRadius.circular(3),
-      child: SizedBox(
-        width: 26,
-        height: 18,
-        child: CustomPaint(painter: _FlagPainter(iso)),
-      ),
-    ),
-  );
+        label: iso,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(3),
+          child: SizedBox(
+            width: 26,
+            height: 18,
+            child: CustomPaint(painter: _FlagPainter(iso)),
+          ),
+        ),
+      );
 }
 
 class _FlagPainter extends CustomPainter {
   const _FlagPainter(this.iso);
   final String iso;
+
   @override
   void paint(Canvas canvas, Size s) {
     final p = Paint();

@@ -145,7 +145,7 @@ class SettingsPage extends StatelessWidget {
             ),
             const SizedBox(height: 7),
             Text(
-              'Recent media stays nearby so conversations open instantly—even when your signal disappears.',
+              'Recent media stays nearby so conversations open instantly - even when your signal disappears.',
               style: Theme.of(
                 context,
               ).textTheme.bodyMedium?.copyWith(height: 1.45),

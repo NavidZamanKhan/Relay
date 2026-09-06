@@ -10,7 +10,7 @@ import '../../core/theme/relay_colors.dart';
 import 'chat_bloc.dart';
 import 'chat_models.dart';
 
-/// RECORDING GESTURE OWNERSHIP — KEEP THIS STRUCTURE WHEN ADDING `record`.
+/// RECORDING GESTURE OWNERSHIP - KEEP THIS STRUCTURE WHEN ADDING `record`.
 ///
 /// The GestureDetector below remains mounted in the SAME element slot for idle,
 /// holding and locked states. Replacing the whole composer with an

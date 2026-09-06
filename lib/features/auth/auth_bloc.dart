@@ -1,23 +1,12 @@
 import 'dart:async';
 
 import 'package:equatable/equatable.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-final class AuthCountrySelected extends AuthEvent {
-  const AuthCountrySelected(this.iso, this.code);
-  final String iso, code;
-  @override
-  List<Object?> get props => [iso, code];
-}
+import 'repositories/i_auth_repository.dart';
 
-final class AuthCountrySearched extends AuthEvent {
-  const AuthCountrySearched(this.query);
-  final String query;
-  @override
-  List<Object?> get props => [query];
-}
-
-enum AuthStep { phone, otp, profile, complete }
+// --- Auth Events ---
 
 sealed class AuthEvent extends Equatable {
   const AuthEvent();
@@ -26,9 +15,25 @@ sealed class AuthEvent extends Equatable {
   List<Object?> get props => [];
 }
 
+final class AuthCountrySelected extends AuthEvent {
+  const AuthCountrySelected(this.iso, this.code);
+  final String iso;
+  final String code;
+
+  @override
+  List<Object?> get props => [iso, code];
+}
+
+final class AuthCountrySearched extends AuthEvent {
+  const AuthCountrySearched(this.query);
+  final String query;
+
+  @override
+  List<Object?> get props => [query];
+}
+
 final class AuthPhoneSubmitted extends AuthEvent {
   const AuthPhoneSubmitted(this.phone);
-
   final String phone;
 
   @override
@@ -37,7 +42,6 @@ final class AuthPhoneSubmitted extends AuthEvent {
 
 final class AuthOtpChanged extends AuthEvent {
   const AuthOtpChanged(this.code);
-
   final String code;
 
   @override
@@ -62,7 +66,6 @@ final class AuthResendTicked extends AuthEvent {
 
 final class AuthProfileUpdated extends AuthEvent {
   const AuthProfileUpdated({required this.name, required this.about});
-
   final String name;
   final String about;
 
@@ -74,18 +77,68 @@ final class AuthRestarted extends AuthEvent {
   const AuthRestarted();
 }
 
+final class AuthSignOutRequested extends AuthEvent {
+  const AuthSignOutRequested();
+}
+
+final class AuthErrorDismissed extends AuthEvent {
+  const AuthErrorDismissed();
+}
+
+// Internal package events for Firebase callbacks
+final class _AuthCodeSent extends AuthEvent {
+  const _AuthCodeSent(this.verificationId, this.resendToken);
+  final String verificationId;
+  final int? resendToken;
+
+  @override
+  List<Object?> get props => [verificationId, resendToken];
+}
+
+final class _AuthVerificationFailed extends AuthEvent {
+  const _AuthVerificationFailed(this.message);
+  final String message;
+
+  @override
+  List<Object?> get props => [message];
+}
+
+final class _AuthAutoVerified extends AuthEvent {
+  const _AuthAutoVerified(this.credential);
+  final PhoneAuthCredential credential;
+
+  @override
+  List<Object?> get props => [credential];
+}
+
+final class _AuthTimeout extends AuthEvent {
+  const _AuthTimeout(this.verificationId);
+  final String verificationId;
+
+  @override
+  List<Object?> get props => [verificationId];
+}
+
+// --- Auth State ---
+
+enum AuthStep { phone, otp, profile, complete }
+
 final class AuthState extends Equatable {
   const AuthState({
     required this.step,
     this.phone = '+880 1712 345 678',
     this.otp = '',
     this.isVerifying = false,
-    this.resendSeconds = 24,
+    this.resendSeconds = 30,
     this.displayName = 'Navid',
     this.about = 'Building things worth keeping open.',
     this.countryIso = 'BD',
     this.countryCode = '+880',
     this.countryQuery = '',
+    this.verificationId,
+    this.resendToken,
+    this.errorMessage,
+    this.userId,
   });
 
   final AuthStep step;
@@ -95,7 +148,13 @@ final class AuthState extends Equatable {
   final int resendSeconds;
   final String displayName;
   final String about;
-  final String countryIso, countryCode, countryQuery;
+  final String countryIso;
+  final String countryCode;
+  final String countryQuery;
+  final String? verificationId;
+  final int? resendToken;
+  final String? errorMessage;
+  final String? userId;
 
   AuthState copyWith({
     AuthStep? step,
@@ -108,6 +167,11 @@ final class AuthState extends Equatable {
     String? countryIso,
     String? countryCode,
     String? countryQuery,
+    String? verificationId,
+    int? resendToken,
+    String? errorMessage,
+    bool clearError = false,
+    String? userId,
   }) {
     return AuthState(
       step: step ?? this.step,
@@ -120,108 +184,338 @@ final class AuthState extends Equatable {
       countryIso: countryIso ?? this.countryIso,
       countryCode: countryCode ?? this.countryCode,
       countryQuery: countryQuery ?? this.countryQuery,
+      verificationId: verificationId ?? this.verificationId,
+      resendToken: resendToken ?? this.resendToken,
+      errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
+      userId: userId ?? this.userId,
     );
   }
 
   @override
   List<Object?> get props => [
-    countryIso,
-    countryCode,
-    countryQuery,
-    step,
-    phone,
-    otp,
-    isVerifying,
-    resendSeconds,
-    displayName,
-    about,
-  ];
+        step,
+        phone,
+        otp,
+        isVerifying,
+        resendSeconds,
+        displayName,
+        about,
+        countryIso,
+        countryCode,
+        countryQuery,
+        verificationId,
+        resendToken,
+        errorMessage,
+        userId,
+      ];
 }
 
+// --- Auth BLoC ---
+
 final class AuthBloc extends Bloc<AuthEvent, AuthState> {
-  AuthBloc({bool previewAuthenticated = true})
-    : super(
-        AuthState(
-          step: previewAuthenticated ? AuthStep.complete : AuthStep.phone,
-        ),
-      ) {
-    on<AuthCountrySelected>(
-      (e, emit) => emit(
-        state.copyWith(
-          countryIso: e.iso,
-          countryCode: e.code,
-          countryQuery: '',
-        ),
+  AuthBloc({
+    IAuthRepository? authRepository,
+    bool previewAuthenticated = true,
+  })  : _authRepository = authRepository,
+        super(
+          AuthState(
+            step: previewAuthenticated ? AuthStep.complete : AuthStep.phone,
+          ),
+        ) {
+    on<AuthCountrySelected>(_onCountrySelected);
+    on<AuthCountrySearched>(_onCountrySearched);
+    on<AuthPhoneSubmitted>(_onPhoneSubmitted);
+    on<_AuthCodeSent>(_onCodeSent);
+    on<_AuthVerificationFailed>(_onVerificationFailed);
+    on<_AuthAutoVerified>(_onAutoVerified);
+    on<_AuthTimeout>(_onTimeout);
+    on<AuthOtpChanged>(_onOtpChanged);
+    on<AuthOtpVerified>(_onOtpVerified);
+    on<AuthPhoneEditRequested>(_onPhoneEditRequested);
+    on<AuthResendRequested>(_onResendRequested);
+    on<AuthResendTicked>(_onResendTicked);
+    on<AuthProfileUpdated>(_onProfileUpdated);
+    on<AuthRestarted>(_onRestarted);
+    on<AuthSignOutRequested>(_onSignOutRequested);
+    on<AuthErrorDismissed>(_onErrorDismissed);
+  }
+
+  final IAuthRepository? _authRepository;
+  Timer? _resendTimer;
+  int _verificationEpoch = 0;
+
+  void _onCountrySelected(AuthCountrySelected event, Emitter<AuthState> emit) {
+    emit(
+      state.copyWith(
+        countryIso: event.iso,
+        countryCode: event.code,
+        countryQuery: '',
       ),
     );
-    on<AuthCountrySearched>(
-      (e, emit) => emit(state.copyWith(countryQuery: e.query)),
+  }
+
+  void _onCountrySearched(AuthCountrySearched event, Emitter<AuthState> emit) {
+    emit(state.copyWith(countryQuery: event.query));
+  }
+
+  Future<void> _onPhoneSubmitted(
+    AuthPhoneSubmitted event,
+    Emitter<AuthState> emit,
+  ) async {
+    final cleanedNumber = event.phone.replaceAll(RegExp(r'[^0-9+]'), '');
+    emit(
+      state.copyWith(
+        phone: event.phone,
+        isVerifying: true,
+        clearError: true,
+      ),
     );
-    on<AuthPhoneSubmitted>((event, emit) {
+
+    if (_authRepository == null) {
+      // Mock / preview mode fallback for tests
       emit(
         state.copyWith(
           step: AuthStep.otp,
-          phone: event.phone,
+          isVerifying: false,
           otp: '',
-          resendSeconds: 24,
+          resendSeconds: 30,
         ),
       );
       _startResendTimer();
-    });
-    on<AuthOtpChanged>((event, emit) {
-      emit(state.copyWith(otp: event.code));
-      if (event.code.length == 6) add(const AuthOtpVerified());
-    });
-    on<AuthOtpVerified>((event, emit) async {
-      if (state.otp.length != 6 || state.isVerifying) return;
-      final epoch = ++_verificationEpoch;
-      emit(state.copyWith(isVerifying: true));
+      return;
+    }
+
+    try {
+      await _authRepository.verifyPhoneNumber(
+        phoneNumber: cleanedNumber,
+        resendToken: state.resendToken,
+        onCodeSent: (verificationId, resendToken) {
+          add(_AuthCodeSent(verificationId, resendToken));
+        },
+        onVerificationFailed: (error) {
+          add(_AuthVerificationFailed(error.message ?? 'Phone verification failed.'));
+        },
+        onVerificationCompleted: (credential) {
+          add(_AuthAutoVerified(credential));
+        },
+        onCodeAutoRetrievalTimeout: (verificationId) {
+          add(_AuthTimeout(verificationId));
+        },
+      );
+    } catch (e) {
+      emit(
+        state.copyWith(
+          isVerifying: false,
+          errorMessage: 'Unable to send SMS code. Please check your network.',
+        ),
+      );
+    }
+  }
+
+  void _onCodeSent(_AuthCodeSent event, Emitter<AuthState> emit) {
+    emit(
+      state.copyWith(
+        step: AuthStep.otp,
+        isVerifying: false,
+        verificationId: event.verificationId,
+        resendToken: event.resendToken,
+        resendSeconds: 30,
+        otp: '',
+        clearError: true,
+      ),
+    );
+    _startResendTimer();
+  }
+
+  void _onVerificationFailed(_AuthVerificationFailed event, Emitter<AuthState> emit) {
+    emit(
+      state.copyWith(
+        isVerifying: false,
+        errorMessage: event.message,
+      ),
+    );
+  }
+
+  Future<void> _onAutoVerified(
+    _AuthAutoVerified event,
+    Emitter<AuthState> emit,
+  ) async {
+    _resendTimer?.cancel();
+    emit(
+      state.copyWith(
+        step: AuthStep.profile,
+        isVerifying: false,
+        clearError: true,
+      ),
+    );
+  }
+
+  void _onTimeout(_AuthTimeout event, Emitter<AuthState> emit) {
+    emit(state.copyWith(verificationId: event.verificationId));
+  }
+
+  void _onOtpChanged(AuthOtpChanged event, Emitter<AuthState> emit) {
+    emit(state.copyWith(otp: event.code, clearError: true));
+    if (event.code.length == 6) {
+      add(const AuthOtpVerified());
+    }
+  }
+
+  Future<void> _onOtpVerified(
+    AuthOtpVerified event,
+    Emitter<AuthState> emit,
+  ) async {
+    if (state.otp.length != 6 || state.isVerifying) return;
+    final epoch = ++_verificationEpoch;
+    emit(state.copyWith(isVerifying: true, clearError: true));
+
+    if (_authRepository == null) {
+      // Mock / preview mode fallback for tests
       await Future<void>.delayed(const Duration(milliseconds: 650));
-      if (emit.isDone ||
-          epoch != _verificationEpoch ||
-          state.step != AuthStep.otp) {
+      if (emit.isDone || epoch != _verificationEpoch || state.step != AuthStep.otp) {
         return;
       }
       _resendTimer?.cancel();
       emit(state.copyWith(step: AuthStep.profile, isVerifying: false));
-    });
-    on<AuthPhoneEditRequested>((event, emit) {
-      _resendTimer?.cancel();
-      _verificationEpoch++;
-      emit(state.copyWith(step: AuthStep.phone, otp: '', isVerifying: false));
-    });
-    on<AuthResendRequested>((event, emit) {
-      if (state.resendSeconds > 0) return;
-      emit(state.copyWith(resendSeconds: 24, otp: ''));
-      _startResendTimer();
-    });
-    on<AuthResendTicked>((event, emit) {
-      if (state.resendSeconds <= 1) {
-        _resendTimer?.cancel();
-        emit(state.copyWith(resendSeconds: 0));
-      } else {
-        emit(state.copyWith(resendSeconds: state.resendSeconds - 1));
-      }
-    });
-    on<AuthProfileUpdated>((event, emit) {
-      if (event.name.trim().isEmpty) return;
+      return;
+    }
+
+    final verificationId = state.verificationId;
+    if (verificationId == null) {
       emit(
         state.copyWith(
-          step: AuthStep.complete,
-          displayName: event.name,
-          about: event.about,
+          isVerifying: false,
+          errorMessage: 'Verification session expired. Please request a new code.',
         ),
       );
-    });
-    on<AuthRestarted>((event, emit) {
+      return;
+    }
+
+    try {
+      final credential = await _authRepository.signInWithOtp(
+        verificationId: verificationId,
+        smsCode: state.otp,
+      );
       _resendTimer?.cancel();
-      _verificationEpoch++;
-      emit(state.copyWith(step: AuthStep.phone, otp: '', isVerifying: false));
-    });
+      emit(
+        state.copyWith(
+          step: AuthStep.profile,
+          isVerifying: false,
+          userId: credential.user?.uid,
+          clearError: true,
+        ),
+      );
+    } on FirebaseAuthException catch (e) {
+      emit(
+        state.copyWith(
+          isVerifying: false,
+          errorMessage: e.message ?? 'Invalid code. Please try again.',
+        ),
+      );
+    } catch (_) {
+      emit(
+        state.copyWith(
+          isVerifying: false,
+          errorMessage: 'Verification failed. Please check the code and try again.',
+        ),
+      );
+    }
   }
 
-  Timer? _resendTimer;
-  int _verificationEpoch = 0;
+  void _onPhoneEditRequested(AuthPhoneEditRequested event, Emitter<AuthState> emit) {
+    _resendTimer?.cancel();
+    _verificationEpoch++;
+    emit(
+      state.copyWith(
+        step: AuthStep.phone,
+        otp: '',
+        isVerifying: false,
+        clearError: true,
+      ),
+    );
+  }
+
+  Future<void> _onResendRequested(
+    AuthResendRequested event,
+    Emitter<AuthState> emit,
+  ) async {
+    if (state.resendSeconds > 0) return;
+    emit(state.copyWith(resendSeconds: 30, otp: '', clearError: true));
+    _startResendTimer();
+
+    if (_authRepository != null) {
+      final cleanedNumber = state.phone.replaceAll(RegExp(r'[^0-9+]'), '');
+      await _authRepository.verifyPhoneNumber(
+        phoneNumber: cleanedNumber,
+        resendToken: state.resendToken,
+        onCodeSent: (verificationId, resendToken) {
+          add(_AuthCodeSent(verificationId, resendToken));
+        },
+        onVerificationFailed: (error) {
+          add(_AuthVerificationFailed(error.message ?? 'Resend failed.'));
+        },
+        onVerificationCompleted: (credential) {
+          add(_AuthAutoVerified(credential));
+        },
+        onCodeAutoRetrievalTimeout: (verificationId) {
+          add(_AuthTimeout(verificationId));
+        },
+      );
+    }
+  }
+
+  void _onResendTicked(AuthResendTicked event, Emitter<AuthState> emit) {
+    if (state.resendSeconds <= 1) {
+      _resendTimer?.cancel();
+      emit(state.copyWith(resendSeconds: 0));
+    } else {
+      emit(state.copyWith(resendSeconds: state.resendSeconds - 1));
+    }
+  }
+
+  void _onProfileUpdated(AuthProfileUpdated event, Emitter<AuthState> emit) {
+    if (event.name.trim().isEmpty) return;
+    emit(
+      state.copyWith(
+        step: AuthStep.complete,
+        displayName: event.name,
+        about: event.about,
+      ),
+    );
+  }
+
+  void _onRestarted(AuthRestarted event, Emitter<AuthState> emit) {
+    _resendTimer?.cancel();
+    _verificationEpoch++;
+    emit(
+      state.copyWith(
+        step: AuthStep.phone,
+        otp: '',
+        isVerifying: false,
+        clearError: true,
+      ),
+    );
+  }
+
+  Future<void> _onSignOutRequested(
+    AuthSignOutRequested event,
+    Emitter<AuthState> emit,
+  ) async {
+    _resendTimer?.cancel();
+    await _authRepository?.signOut();
+    emit(
+      state.copyWith(
+        step: AuthStep.phone,
+        otp: '',
+        isVerifying: false,
+        clearError: true,
+      ),
+    );
+  }
+
+  void _onErrorDismissed(AuthErrorDismissed event, Emitter<AuthState> emit) {
+    emit(state.copyWith(clearError: true));
+  }
 
   void _startResendTimer() {
     _resendTimer?.cancel();

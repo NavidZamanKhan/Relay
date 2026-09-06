@@ -170,13 +170,22 @@ class _OtpPageState extends State<OtpPage> {
                         ],
                       ),
               ),
-              const SizedBox(height: 12),
-              Text(
-                'Prototype tip: enter any six digits.',
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(color: RelayColors.coralDeep),
-              ),
+              if (state.errorMessage != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  state.errorMessage!,
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: RelayColors.coralDeep),
+                ),
+              ] else ...[
+                const SizedBox(height: 12),
+                Text(
+                  'Enter the 6-digit code sent to your phone.',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
             ],
           );
         },

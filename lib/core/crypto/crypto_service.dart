@@ -5,7 +5,14 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 /// Cryptographic service providing client-side X25519 key generation and secure local persistence.
 class CryptoService {
   CryptoService({FlutterSecureStorage? storage})
-      : _storage = storage ?? const FlutterSecureStorage();
+      : _storage = storage ??
+            const FlutterSecureStorage(
+              iOptions: IOSOptions(
+                accessibility: KeychainAccessibility.first_unlock_this_device,
+                synchronizable: false,
+              ),
+              aOptions: AndroidOptions(),
+            );
 
   final FlutterSecureStorage _storage;
   static const _privateKeyKey = 'relay_x25519_private_key';

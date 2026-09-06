@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'app.dart';
 import 'app_bloc.dart';
 import 'features/auth/auth_bloc.dart';
+import 'features/auth/repositories/firebase_auth_repository.dart';
 import 'features/chats/chat_bloc.dart';
 import 'firebase_options.dart';
 
@@ -13,13 +14,17 @@ Future<void> main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+  final authRepository = FirebaseAuthRepository();
   runApp(
     MultiBlocProvider(
       providers: [
         BlocProvider(create: (_) => AppBloc()),
-        // The portfolio prototype opens at the most visually useful screen.
-        // Set previewAuthenticated to false when testing the onboarding flow.
-        BlocProvider(create: (_) => AuthBloc(previewAuthenticated: true)),
+        BlocProvider(
+          create: (_) => AuthBloc(
+            authRepository: authRepository,
+            previewAuthenticated: false,
+          ),
+        ),
         BlocProvider(create: (_) => ChatBloc()),
       ],
       child: const RelayApp(),
