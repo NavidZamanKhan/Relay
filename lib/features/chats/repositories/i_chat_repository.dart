@@ -44,4 +44,7 @@ abstract interface class IChatRepository {
 
   /// Discovers registered Relay users among local device phone numbers.
   Future<List<RelayContact>> matchContacts(List<String> normalizedPhoneNumbers);
+
+  /// Searches registered users by name or phone query.
+  Future<List<RelayContact>> searchUsers(String query);
 }

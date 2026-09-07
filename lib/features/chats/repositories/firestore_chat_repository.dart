@@ -300,4 +300,36 @@ class FirestoreChatRepository implements IChatRepository {
 
     return matched;
   }
+
+  @override
+  Future<List<RelayContact>> searchUsers(String query) async {
+    final cleanQuery = query.trim();
+    final snapshot = await _usersCollection.limit(20).get();
+    final currentUid = _auth.currentUser?.uid;
+    final results = <RelayContact>[];
+
+    for (final doc in snapshot.docs) {
+      if (doc.id == currentUid) continue;
+      final data = doc.data();
+      final name = (data['displayName'] as String?) ?? '';
+      final phone = (data['phoneNumber'] as String?) ?? '';
+
+      if (cleanQuery.isEmpty ||
+          name.toLowerCase().contains(cleanQuery.toLowerCase()) ||
+          phone.contains(cleanQuery)) {
+        results.add(
+          RelayContact(
+            id: doc.id,
+            displayName: name.isEmpty ? 'Relay User' : name,
+            phoneNumber: phone,
+            publicKey: data['publicKey'] as String?,
+            about: data['about'] as String?,
+            isRegistered: true,
+          ),
+        );
+      }
+    }
+
+    return results;
+  }
 }

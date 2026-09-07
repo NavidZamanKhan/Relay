@@ -9,9 +9,14 @@ import '../../core/widgets/relay_button.dart';
 import 'chat_bloc.dart';
 import 'chat_models.dart';
 import 'conversation_page.dart';
+import 'repositories/i_chat_repository.dart';
 
 sealed class _ComposeEvent {
   const _ComposeEvent();
+}
+
+final class _LoadContacts extends _ComposeEvent {
+  const _LoadContacts();
 }
 
 final class _Query extends _ComposeEvent {
@@ -39,66 +44,94 @@ class _ComposeState extends Equatable {
     this.group = false,
     this.members = const {},
     this.name = '',
+    this.registeredContacts = const [],
+    this.isLoading = false,
   });
   final String query, name;
   final bool group;
   final Set<String> members;
+  final List<RelayContact> registeredContacts;
+  final bool isLoading;
+
+  _ComposeState copyWith({
+    String? query,
+    String? name,
+    bool? group,
+    Set<String>? members,
+    List<RelayContact>? registeredContacts,
+    bool? isLoading,
+  }) => _ComposeState(
+    query: query ?? this.query,
+    name: name ?? this.name,
+    group: group ?? this.group,
+    members: members ?? this.members,
+    registeredContacts: registeredContacts ?? this.registeredContacts,
+    isLoading: isLoading ?? this.isLoading,
+  );
+
   @override
-  List<Object?> get props => [query, name, group, members];
+  List<Object?> get props => [query, name, group, members, registeredContacts, isLoading];
 }
 
 class _ComposeBloc extends Bloc<_ComposeEvent, _ComposeState> {
-  _ComposeBloc() : super(const _ComposeState()) {
-    on<_Query>(
-      (e, emit) => emit(
-        _ComposeState(
-          query: e.value,
-          group: state.group,
-          members: state.members,
-          name: state.name,
-        ),
-      ),
-    );
+  _ComposeBloc({IChatRepository? chatRepository})
+      : _chatRepository = chatRepository,
+        super(const _ComposeState()) {
+    on<_LoadContacts>((e, emit) async {
+      if (_chatRepository != null) {
+        emit(state.copyWith(isLoading: true));
+        try {
+          final users = await _chatRepository.searchUsers(state.query);
+          emit(state.copyWith(registeredContacts: users, isLoading: false));
+        } catch (_) {
+          emit(state.copyWith(isLoading: false));
+        }
+      }
+    });
+
+    on<_Query>((e, emit) async {
+      emit(state.copyWith(query: e.value));
+      if (_chatRepository != null) {
+        try {
+          final users = await _chatRepository.searchUsers(e.value);
+          emit(state.copyWith(registeredContacts: users));
+        } catch (_) {}
+      }
+    });
+
     on<_Name>(
-      (e, emit) => emit(
-        _ComposeState(
-          query: state.query,
-          group: state.group,
-          members: state.members,
-          name: e.name,
-        ),
-      ),
+      (e, emit) => emit(state.copyWith(name: e.name)),
     );
+
     on<_Group>(
-      (e, emit) => emit(
-        _ComposeState(
-          query: state.query,
-          group: !state.group,
-          members: state.members,
-          name: state.name,
-        ),
-      ),
+      (e, emit) => emit(state.copyWith(group: !state.group)),
     );
+
     on<_Member>((e, emit) {
       final members = {...state.members};
       if (!members.add(e.id)) members.remove(e.id);
-      emit(
-        _ComposeState(
-          query: state.query,
-          group: state.group,
-          members: members,
-          name: state.name,
-        ),
-      );
+      emit(state.copyWith(members: members));
     });
   }
+
+  final IChatRepository? _chatRepository;
 }
 
 class NewRelaySheet extends StatelessWidget {
   const NewRelaySheet({super.key});
+
   @override
-  Widget build(BuildContext context) =>
-      BlocProvider(create: (_) => _ComposeBloc(), child: const _NewRelayBody());
+  Widget build(BuildContext context) {
+    IChatRepository? repo;
+    try {
+      repo = RepositoryProvider.of<IChatRepository>(context);
+    } catch (_) {}
+
+    return BlocProvider(
+      create: (_) => _ComposeBloc(chatRepository: repo)..add(const _LoadContacts()),
+      child: const _NewRelayBody(),
+    );
+  }
 }
 
 class _NewRelayBody extends StatelessWidget {
@@ -108,14 +141,36 @@ class _NewRelayBody extends StatelessWidget {
     BuildContext context,
   ) => BlocBuilder<_ComposeBloc, _ComposeState>(
     builder: (context, state) {
-      final contacts = context
+      final convList = context
           .read<ChatBloc>()
           .state
           .conversations
+          .where((c) => !c.isGroup)
+          .toList();
+
+      final existingIds = convList.map((c) => c.recipientId ?? c.id).toSet();
+
+      final remoteContacts = state.registeredContacts
+          .where((rc) => !existingIds.contains(rc.id))
+          .map(
+            (rc) => Conversation(
+              id: rc.id,
+              name: rc.displayName,
+              avatarAsset: null,
+              lastMessage: rc.phoneNumber.isNotEmpty
+                  ? rc.phoneNumber
+                  : (rc.about ?? 'On Relay'),
+              timeLabel: 'Now',
+              recipientId: rc.id,
+              recipientPublicKey: rc.publicKey,
+            ),
+          );
+
+      final contacts = [...convList, ...remoteContacts]
           .where(
             (c) =>
-                !c.isGroup &&
-                c.name.toLowerCase().contains(state.query.toLowerCase()),
+                c.name.toLowerCase().contains(state.query.toLowerCase()) ||
+                c.lastMessage.toLowerCase().contains(state.query.toLowerCase()),
           )
           .toList();
       return SizedBox(
@@ -203,6 +258,13 @@ class _NewRelayBody extends StatelessWidget {
                           final nav = Navigator.of(context);
                           final bloc = context.read<ChatBloc>();
                           nav.pop();
+                          bloc.add(
+                            ChatDirectConversationStarted(
+                              recipientUserId: c.recipientId ?? c.id,
+                              recipientName: c.name,
+                              recipientPublicKey: c.recipientPublicKey,
+                            ),
+                          );
                           ConversationPage.openWith(nav, bloc, c);
                         }
                       },
