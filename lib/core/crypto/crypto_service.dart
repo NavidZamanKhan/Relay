@@ -5,8 +5,11 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 /// Cryptographic service providing client-side X25519 key management,
 /// Diffie-Hellman shared secret derivation, and secure local persistence.
 class CryptoService {
-  CryptoService({FlutterSecureStorage? storage, X25519? algorithm})
-      : _storage = storage ??
+  CryptoService({
+    FlutterSecureStorage? storage,
+    X25519? algorithm,
+    AesGcm? cipher,
+  })  : _storage = storage ??
             const FlutterSecureStorage(
               iOptions: IOSOptions(
                 accessibility: KeychainAccessibility.first_unlock_this_device,
@@ -14,10 +17,12 @@ class CryptoService {
               ),
               aOptions: AndroidOptions(),
             ),
-        _algorithm = algorithm ?? X25519();
+        _algorithm = algorithm ?? X25519(),
+        _cipher = cipher ?? AesGcm.with256bits();
 
   final FlutterSecureStorage _storage;
   final X25519 _algorithm;
+  final AesGcm _cipher;
 
   static const _privateKeyKey = 'relay_x25519_private_key';
   static const _publicKeyKey = 'relay_x25519_public_key';
@@ -101,6 +106,54 @@ class CryptoService {
     );
 
     return sharedSecret.extractBytes();
+  }
+
+  /// Encrypts plaintext using AES-GCM 256-bit with the derived shared secret.
+  Future<({String ciphertext, String nonce})> encryptPayload({
+    required String plaintext,
+    required List<int> sharedSecretBytes,
+  }) async {
+    final secretKey = SecretKey(sharedSecretBytes);
+    final clearBytes = utf8.encode(plaintext);
+    final secretBox = await _cipher.encrypt(
+      clearBytes,
+      secretKey: secretKey,
+    );
+    final combinedCiphertext = secretBox.cipherText + secretBox.mac.bytes;
+    return (
+      ciphertext: base64Encode(combinedCiphertext),
+      nonce: base64Encode(secretBox.nonce),
+    );
+  }
+
+  /// Decrypts AES-GCM ciphertext using the derived shared secret and nonce.
+  Future<String> decryptPayload({
+    required String ciphertextBase64,
+    required String nonceBase64,
+    required List<int> sharedSecretBytes,
+  }) async {
+    final secretKey = SecretKey(sharedSecretBytes);
+    final combinedBytes = base64Decode(ciphertextBase64);
+    final nonceBytes = base64Decode(nonceBase64);
+
+    if (combinedBytes.length < 16) {
+      throw ArgumentError('Ciphertext too short for MAC verification.');
+    }
+    final cipherText = combinedBytes.sublist(0, combinedBytes.length - 16);
+    final macBytes = combinedBytes.sublist(combinedBytes.length - 16);
+
+    final secretBox = SecretBox(
+      cipherText,
+      nonce: nonceBytes,
+      mac: Mac(macBytes),
+    );
+
+    final decryptedBytes = await _cipher.decrypt(
+      secretBox,
+      secretKey: secretKey,
+    );
+
+    return utf8.decode(decryptedBytes);
   }
 
   /// Clears stored cryptographic keys on sign-out or account wipe.

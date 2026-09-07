@@ -9,6 +9,7 @@ import 'features/auth/auth_bloc.dart';
 import 'features/auth/repositories/firebase_auth_repository.dart';
 import 'features/auth/repositories/firestore_user_repository.dart';
 import 'features/chats/chat_bloc.dart';
+import 'features/chats/repositories/firestore_chat_repository.dart';
 import 'firebase_options.dart';
 
 Future<void> main() async {
@@ -19,6 +20,7 @@ Future<void> main() async {
   final authRepository = FirebaseAuthRepository();
   final userRepository = FirestoreUserRepository();
   final cryptoService = CryptoService();
+  final chatRepository = FirestoreChatRepository(cryptoService: cryptoService);
 
   runApp(
     MultiBlocProvider(
@@ -32,7 +34,12 @@ Future<void> main() async {
             previewAuthenticated: false,
           ),
         ),
-        BlocProvider(create: (_) => ChatBloc()),
+        BlocProvider(
+          create: (_) => ChatBloc(
+            chatRepository: chatRepository,
+            demoMode: false,
+          ),
+        ),
       ],
       child: const RelayApp(),
     ),

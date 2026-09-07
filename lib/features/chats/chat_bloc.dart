@@ -5,11 +5,47 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'chat_models.dart';
 import 'demo_data.dart';
+import 'repositories/i_chat_repository.dart';
 
 sealed class ChatEvent extends Equatable {
   const ChatEvent();
   @override
   List<Object?> get props => [];
+}
+
+final class ChatStreamStarted extends ChatEvent {
+  const ChatStreamStarted(this.userId);
+  final String userId;
+  @override
+  List<Object?> get props => [userId];
+}
+
+final class _ChatConversationsUpdated extends ChatEvent {
+  const _ChatConversationsUpdated(this.conversations);
+  final List<Conversation> conversations;
+  @override
+  List<Object?> get props => [conversations];
+}
+
+final class _ChatMessagesUpdated extends ChatEvent {
+  const _ChatMessagesUpdated(this.chatId, this.messages);
+  final String chatId;
+  final List<RelayMessage> messages;
+  @override
+  List<Object?> get props => [chatId, messages];
+}
+
+final class ChatDirectConversationStarted extends ChatEvent {
+  const ChatDirectConversationStarted({
+    required this.recipientUserId,
+    required this.recipientName,
+    this.recipientPublicKey,
+  });
+  final String recipientUserId;
+  final String recipientName;
+  final String? recipientPublicKey;
+  @override
+  List<Object?> get props => [recipientUserId, recipientName, recipientPublicKey];
 }
 
 final class ChatOpened extends ChatEvent {
@@ -245,19 +281,98 @@ final class ChatState extends Equatable {
 /// interpolate pixels only; every send/seek/record/filter action arrives here.
 /// Timers simulate transport and audio; no microphone or network is accessed.
 final class ChatBloc extends Bloc<ChatEvent, ChatState> {
-  ChatBloc()
-    : super(
-        ChatState(
-          conversations: DemoData.inbox(),
+  ChatBloc({
+    IChatRepository? chatRepository,
+    String? currentUserId,
+    bool? demoMode,
+  })  : _chatRepository = chatRepository,
+        _currentUserId = currentUserId,
+        _demoMode = demoMode ?? (chatRepository == null),
+        super(
+          ChatState(
+            conversations:
+                (demoMode ?? (chatRepository == null)) ? DemoData.inbox() : const [],
+            threads: (demoMode ?? (chatRepository == null))
+                ? {
+                    for (final c in DemoData.conversations)
+                      c.id: DemoData.messagesFor(c.id),
+                  }
+                : const {},
+            activeId: (demoMode ?? (chatRepository == null)) ? 'aisha' : '',
+          ),
+        ) {
+    on<ChatStreamStarted>((e, emit) async {
+      _currentUserId = e.userId;
+      await _conversationsSubscription?.cancel();
+      if (_chatRepository != null) {
+        _conversationsSubscription = _chatRepository
+            .watchConversations(e.userId)
+            .listen((convs) {
+          add(_ChatConversationsUpdated(convs));
+        });
+      }
+    });
+
+    on<_ChatConversationsUpdated>((e, emit) {
+      emit(state.copyWith(conversations: e.conversations));
+    });
+
+    on<_ChatMessagesUpdated>((e, emit) {
+      emit(
+        state.copyWith(
           threads: {
-            for (final c in DemoData.conversations)
-              c.id: DemoData.messagesFor(c.id),
+            ...state.threads,
+            e.chatId: e.messages,
           },
         ),
-      ) {
-    on<ChatOpened>((e, emit) {
+      );
+      if (_chatRepository != null && _currentUserId != null) {
+        for (final m in e.messages) {
+          if (m.senderId != _currentUserId && m.delivery != DeliveryStage.read) {
+            _chatRepository.updateDeliveryStatus(
+              chatId: e.chatId,
+              messageId: m.id,
+              status: DeliveryStage.read,
+            );
+          }
+        }
+      }
+    });
+
+    on<ChatDirectConversationStarted>((e, emit) async {
+      if (_chatRepository != null && _currentUserId != null) {
+        try {
+          final conv = await _chatRepository.getOrCreateDirectConversation(
+            currentUserId: _currentUserId!,
+            recipientUserId: e.recipientUserId,
+            recipientName: e.recipientName,
+            recipientPublicKey: e.recipientPublicKey,
+          );
+          emit(
+            state.copyWith(
+              conversations: [
+                conv,
+                for (final c in state.conversations)
+                  if (c.id != conv.id) c,
+              ],
+            ),
+          );
+          add(ChatOpened(conv.id));
+        } catch (_) {}
+      }
+    });
+
+    on<ChatOpened>((e, emit) async {
       _voiceTimer?.cancel();
       _recordingTimer?.cancel();
+      await _messagesSubscription?.cancel();
+      if (_chatRepository != null && _currentUserId != null) {
+        _messagesSubscription = _chatRepository
+            .watchMessages(e.id, _currentUserId!)
+            .listen((msgs) {
+          add(_ChatMessagesUpdated(e.id, msgs));
+        });
+      }
       emit(
         state.copyWith(
           activeId: e.id,
@@ -283,20 +398,47 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
     on<ChatComposerChanged>(
       (e, emit) => emit(state.copyWith(composerText: e.text)),
     );
-    on<ChatTextSent>((e, emit) {
+    on<ChatTextSent>((e, emit) async {
       final text = state.composerText.trim();
       if (text.isEmpty) return;
       final id = state.activeId;
+
+      if (_chatRepository != null && _currentUserId != null) {
+        final conv = state.conversations.where((c) => c.id == id).firstOrNull;
+        final outgoing = RelayMessage(
+          id: _id('msg'),
+          senderId: _currentUserId!,
+          recipientId: conv?.recipientId,
+          sentAt: DateTime.now(),
+          kind: MessageKind.text,
+          text: text,
+          delivery: DeliveryStage.sending,
+          isMine: true,
+        );
+
+        _appendLocal(emit, id, outgoing);
+        emit(state.copyWith(composerText: ''));
+
+        try {
+          await _chatRepository.sendMessage(
+            chatId: id,
+            message: outgoing,
+            recipientPublicKey: conv?.recipientPublicKey ?? '',
+          );
+        } catch (_) {}
+        return;
+      }
+
       _append(emit, id, _outgoing(MessageKind.text, text: text));
       emit(
         state.copyWith(composerText: '', typingIds: {...state.typingIds, id}),
       );
-      // Debounce the simulated reply: rapid sends produce one reply, and every
-      // callback retains its conversation identity when the user changes chats.
-      _replyTimers[id]?.cancel();
-      _replyTimers[id] = Timer(const Duration(milliseconds: 2100), () {
-        if (!isClosed) add(ChatReplyArrived(id));
-      });
+      if (_demoMode) {
+        _replyTimers[id]?.cancel();
+        _replyTimers[id] = Timer(const Duration(milliseconds: 2100), () {
+          if (!isClosed) add(ChatReplyArrived(id));
+        });
+      }
     });
     on<ChatMediaSent>(
       (e, emit) => _append(
@@ -481,11 +623,45 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
       );
     });
   }
+
+  final IChatRepository? _chatRepository;
+  String? _currentUserId;
+  final bool _demoMode;
+  StreamSubscription<List<Conversation>>? _conversationsSubscription;
+  StreamSubscription<List<RelayMessage>>? _messagesSubscription;
   Timer? _voiceTimer, _recordingTimer;
   final _deliveryTimers = <Timer>{};
   final _replyTimers = <String, Timer>{};
   final _playbackClock = Stopwatch();
   int _sequence = 0;
+
+  void _appendLocal(Emitter<ChatState> emit, String chatId, RelayMessage message) {
+    final preview = switch (message.kind) {
+      MessageKind.text => message.text ?? '',
+      MessageKind.image => 'Photo',
+      MessageKind.voice => 'Voice message',
+      MessageKind.document => message.text ?? 'Document',
+    };
+    emit(
+      state.copyWith(
+        threads: {
+          ...state.threads,
+          chatId: [...?state.threads[chatId], message],
+        },
+        conversations: [
+          for (final c in state.conversations)
+            c.id == chatId
+                ? c.copyWith(
+                    lastMessage: preview,
+                    previewKind: message.kind,
+                    timeLabel: 'Now',
+                    delivery: message.delivery,
+                  )
+                : c,
+        ],
+      ),
+    );
+  }
   String _id(String prefix) =>
       '$prefix-${DateTime.now().microsecondsSinceEpoch}-${_sequence++}';
   RelayMessage _outgoing(
@@ -601,6 +777,8 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
   @override
   Future<void> close() {
+    _conversationsSubscription?.cancel();
+    _messagesSubscription?.cancel();
     _voiceTimer?.cancel();
     _recordingTimer?.cancel();
     _playbackClock.stop();

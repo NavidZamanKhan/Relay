@@ -118,6 +118,41 @@ void main() {
       );
     });
 
+    test('encrypts and decrypts messages with derived shared secret', () async {
+      final storageAlice = FakeSecureStorage();
+      final cryptoAlice = CryptoService(storage: storageAlice);
+      final alicePub = await cryptoAlice.getOrCreatePublicKey();
+
+      final storageBob = FakeSecureStorage();
+      final cryptoBob = CryptoService(storage: storageBob);
+      final bobPub = await cryptoBob.getOrCreatePublicKey();
+
+      final secretAlice = await cryptoAlice.deriveSharedSecret(
+        peerPublicKeyBase64: bobPub,
+      );
+      final secretBob = await cryptoBob.deriveSharedSecret(
+        peerPublicKeyBase64: alicePub,
+      );
+
+      const clearMessage = 'Top secret end-to-end encrypted signal';
+      final encrypted = await cryptoAlice.encryptPayload(
+        plaintext: clearMessage,
+        sharedSecretBytes: secretAlice,
+      );
+
+      expect(encrypted.ciphertext, isNotEmpty);
+      expect(encrypted.nonce, isNotEmpty);
+      expect(encrypted.ciphertext, isNot(equals(clearMessage)));
+
+      final decrypted = await cryptoBob.decryptPayload(
+        ciphertextBase64: encrypted.ciphertext,
+        nonceBase64: encrypted.nonce,
+        sharedSecretBytes: secretBob,
+      );
+
+      expect(decrypted, equals(clearMessage));
+    });
+
     test('clearKeys removes both public and private keys from secure storage', () async {
       await cryptoService.getOrCreatePublicKey();
       await cryptoService.clearKeys();

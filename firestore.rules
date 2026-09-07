@@ -24,6 +24,47 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Chats Collection Security Rules
+    match /chats/{chatId} {
+      // Allow read if authenticated and user is one of the participants
+      allow read: if request.auth != null && (request.auth.uid in resource.data.participantIds);
+
+      // Allow create if authenticated and user is listed in participantIds
+      allow create: if request.auth != null
+        && (request.auth.uid in request.resource.data.participantIds)
+        && request.resource.data.participantIds.size() >= 2
+        && request.resource.data.participantIds.size() <= 100;
+
+      // Allow update if authenticated participant updating snippet, delivery, unread, or typing
+      allow update: if request.auth != null
+        && (request.auth.uid in resource.data.participantIds);
+
+      // Prevent client-side chat deletion
+      allow delete: if false;
+
+      // Messages Subcollection Security Rules
+      match /messages/{messageId} {
+        // Allow read if user is a participant of the parent chat
+        allow read: if request.auth != null
+          && (request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participantIds);
+
+        // Allow create if user is the sender and a participant of the chat
+        allow create: if request.auth != null
+          && request.resource.data.senderId == request.auth.uid
+          && (request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participantIds)
+          && request.resource.data.encryptedPayload is string
+          && request.resource.data.encryptedPayload.size() <= 65536;
+
+        // Allow update if participant updating delivery status (sent -> delivered -> read)
+        allow update: if request.auth != null
+          && (request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participantIds)
+          && request.resource.data.senderId == resource.data.senderId
+          && request.resource.data.encryptedPayload == resource.data.encryptedPayload;
+
+        allow delete: if false;
+      }
+    }
+
     // Default deny all other collections
     match /{document=**} {
       allow read, write: if false;
