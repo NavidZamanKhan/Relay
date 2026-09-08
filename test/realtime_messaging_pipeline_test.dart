@@ -226,5 +226,17 @@ void main() {
         throwsA(isA<Exception>()),
       );
     });
+
+    test('verifies 4-stage message delivery lifecycle semantics', () {
+      expect(DeliveryStage.fromString('sending'), equals(DeliveryStage.sending));
+      expect(DeliveryStage.fromString('sent'), equals(DeliveryStage.sent));
+      expect(DeliveryStage.fromString('delivered'), equals(DeliveryStage.delivered));
+      expect(DeliveryStage.fromString('read'), equals(DeliveryStage.read));
+
+      expect(DeliveryStage.sending.toDbString(), equals('sending'));
+      expect(DeliveryStage.sent.toDbString(), equals('sent'));
+      expect(DeliveryStage.delivered.toDbString(), equals('delivered'));
+      expect(DeliveryStage.read.toDbString(), equals('read'));
+    });
   });
 }

@@ -17,6 +17,7 @@ class Conversation extends Equatable {
     this.participantIds = const [],
     this.recipientId,
     this.recipientPublicKey,
+    this.participantNames,
     this.online = false,
     this.unread = 0,
     this.previewKind = MessageKind.text,
@@ -35,6 +36,7 @@ class Conversation extends Equatable {
   final List<String> participantIds;
   final String? recipientId;
   final String? recipientPublicKey;
+  final Map<String, String>? participantNames;
   final bool online;
   final int unread;
   final MessageKind previewKind;
@@ -53,6 +55,7 @@ class Conversation extends Equatable {
     List<String>? participantIds,
     String? recipientId,
     String? recipientPublicKey,
+    Map<String, String>? participantNames,
     bool? online,
     int? unread,
     MessageKind? previewKind,
@@ -72,6 +75,7 @@ class Conversation extends Equatable {
         participantIds: participantIds ?? this.participantIds,
         recipientId: recipientId ?? this.recipientId,
         recipientPublicKey: recipientPublicKey ?? this.recipientPublicKey,
+        participantNames: participantNames ?? this.participantNames,
         online: online ?? this.online,
         unread: unread ?? this.unread,
         previewKind: previewKind ?? this.previewKind,
@@ -86,6 +90,7 @@ class Conversation extends Equatable {
     return {
       'participantIds': participantIds,
       if (recipientId != null) 'recipientId': recipientId,
+      if (participantNames != null) 'participantNames': participantNames,
       'lastMessage': lastMessage,
       'previewKind': previewKind.toDbString(),
       'lastMessageAt': useServerTimestamp
@@ -134,9 +139,19 @@ class Conversation extends Equatable {
         : (map['timeLabel'] as String? ?? '');
 
     final isGroup = (map['isGroup'] as bool?) ?? false;
-    final name = isGroup
-        ? (map['name'] as String? ?? fallbackName ?? 'Group')
-        : (fallbackName ?? (map['name'] as String? ?? 'Relay Contact'));
+    final rawNames = map['participantNames'] as Map<dynamic, dynamic>?;
+    final parsedNames = rawNames
+        ?.map((k, v) => MapEntry(k.toString(), v.toString()));
+
+    String name;
+    if (isGroup) {
+      name = map['name'] as String? ?? fallbackName ?? 'Group';
+    } else if (otherParticipantId != null &&
+        parsedNames?[otherParticipantId]?.trim().isNotEmpty == true) {
+      name = parsedNames![otherParticipantId]!.trim();
+    } else {
+      name = fallbackName ?? (map['name'] as String? ?? 'Relay Contact');
+    }
 
     final deliveryStr = map['delivery'] as String?;
     final delivery = deliveryStr != null
@@ -167,6 +182,7 @@ class Conversation extends Equatable {
       participantIds: participants,
       recipientId: otherParticipantId ?? map['recipientId'] as String?,
       recipientPublicKey: resolvedPublicKey,
+      participantNames: parsedNames,
       online: (map['online'] as bool?) ?? false,
       unread: unread,
       previewKind: MessageKind.fromString(map['previewKind'] as String?),
@@ -207,6 +223,7 @@ class Conversation extends Equatable {
         participantIds,
         recipientId,
         recipientPublicKey,
+        participantNames,
         online,
         unread,
         previewKind,

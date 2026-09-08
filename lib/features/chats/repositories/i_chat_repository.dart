@@ -27,6 +27,18 @@ abstract interface class IChatRepository {
     required DeliveryStage status,
   });
 
+  /// Acknowledges delivery of unread messages in [chatId] for [recipientUserId].
+  Future<void> markConversationDelivered({
+    required String chatId,
+    required String recipientUserId,
+  });
+
+  /// Marks unread messages in [chatId] as read for [readerUserId] and resets unread count.
+  Future<void> markConversationRead({
+    required String chatId,
+    required String readerUserId,
+  });
+
   /// Updates typing presence indicator in [chatId].
   Future<void> setTypingStatus({
     required String chatId,

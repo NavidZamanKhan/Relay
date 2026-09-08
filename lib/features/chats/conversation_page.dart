@@ -44,7 +44,9 @@ class ConversationPage extends StatelessWidget {
           recipientId: chat.recipientId,
         ),
       ),
-    );
+    ).then((_) {
+      bloc.add(ChatClosed(chat.id));
+    });
   }
 
   final String contactId;
@@ -55,28 +57,35 @@ class ConversationPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      resizeToAvoidBottomInset: true,
-      body: SignalBackground(
-        child: SafeArea(
-          bottom: false,
-          child: Column(
-            children: [
-              _ConversationHeader(
-                contactId: contactId,
-                contactName: contactName,
-                avatarAsset: avatarAsset,
-                online: online,
-                recipientId: recipientId,
-              ),
-              const Expanded(
-                child: RelayMessageList(
-                  dateHeader: _DatePill(),
-                  typingIndicator: _TypingBubble(),
+    return PopScope(
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) {
+          context.read<ChatBloc>().add(ChatClosed(contactId));
+        }
+      },
+      child: Scaffold(
+        resizeToAvoidBottomInset: true,
+        body: SignalBackground(
+          child: SafeArea(
+            bottom: false,
+            child: Column(
+              children: [
+                _ConversationHeader(
+                  contactId: contactId,
+                  contactName: contactName,
+                  avatarAsset: avatarAsset,
+                  online: online,
+                  recipientId: recipientId,
                 ),
-              ),
-              MessageComposer(contactName: contactName),
-            ],
+                const Expanded(
+                  child: RelayMessageList(
+                    dateHeader: _DatePill(),
+                    typingIndicator: _TypingBubble(),
+                  ),
+                ),
+                MessageComposer(contactName: contactName),
+              ],
+            ),
           ),
         ),
       ),
@@ -123,15 +132,23 @@ class _ConversationHeader extends StatelessWidget {
         stream: userRepo.watchUserProfile(effectivePeerUid),
         builder: (context, snapshot) {
           final liveOnline = snapshot.data?.isOnline ?? online;
-          return _buildBar(context, isOnline: liveOnline);
+          final liveName =
+              (snapshot.data?.displayName.trim().isNotEmpty == true)
+                  ? snapshot.data!.displayName.trim()
+                  : contactName;
+          return _buildBar(context, displayName: liveName, isOnline: liveOnline);
         },
       );
     }
 
-    return _buildBar(context, isOnline: online);
+    return _buildBar(context, displayName: contactName, isOnline: online);
   }
 
-  Widget _buildBar(BuildContext context, {required bool isOnline}) {
+  Widget _buildBar(
+    BuildContext context, {
+    required String displayName,
+    required bool isOnline,
+  }) {
     return Container(
       height: 64,
       padding: const EdgeInsets.fromLTRB(3, 4, 5, 4),
@@ -153,7 +170,7 @@ class _ConversationHeader extends StatelessWidget {
           Hero(
             tag: 'avatar-$contactId',
             child: RelayAvatar(
-              name: contactName,
+              name: displayName,
               asset: avatarAsset,
               online: isOnline,
               size: 40,
@@ -166,7 +183,7 @@ class _ConversationHeader extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  contactName,
+                  displayName,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.titleMedium,

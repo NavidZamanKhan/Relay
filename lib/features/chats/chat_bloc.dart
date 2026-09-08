@@ -55,6 +55,13 @@ final class ChatOpened extends ChatEvent {
   List<Object?> get props => [id];
 }
 
+final class ChatClosed extends ChatEvent {
+  const ChatClosed(this.id);
+  final String id;
+  @override
+  List<Object?> get props => [id];
+}
+
 final class ChatSearchChanged extends ChatEvent {
   const ChatSearchChanged(this.query);
   final String query;
@@ -315,6 +322,16 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
     on<_ChatConversationsUpdated>((e, emit) {
       emit(state.copyWith(conversations: e.conversations));
+      if (_chatRepository != null && _currentUserId != null) {
+        for (final conv in e.conversations) {
+          if (conv.unread > 0 && conv.delivery == DeliveryStage.sent) {
+            _chatRepository.markConversationDelivered(
+              chatId: conv.id,
+              recipientUserId: _currentUserId!,
+            );
+          }
+        }
+      }
     });
 
     on<_ChatMessagesUpdated>((e, emit) {
@@ -327,13 +344,27 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
         ),
       );
       if (_chatRepository != null && _currentUserId != null) {
+        final isChatActive = state.activeId == e.chatId;
         for (final m in e.messages) {
-          if (m.senderId != _currentUserId && m.delivery != DeliveryStage.read) {
-            _chatRepository.updateDeliveryStatus(
-              chatId: e.chatId,
-              messageId: m.id,
-              status: DeliveryStage.read,
-            );
+          if (m.senderId != _currentUserId) {
+            if (isChatActive) {
+              if (m.delivery != DeliveryStage.read) {
+                _chatRepository.updateDeliveryStatus(
+                  chatId: e.chatId,
+                  messageId: m.id,
+                  status: DeliveryStage.read,
+                );
+              }
+            } else {
+              if (m.delivery == DeliveryStage.sent ||
+                  m.delivery == DeliveryStage.sending) {
+                _chatRepository.updateDeliveryStatus(
+                  chatId: e.chatId,
+                  messageId: m.id,
+                  status: DeliveryStage.delivered,
+                );
+              }
+            }
           }
         }
       }
@@ -374,6 +405,11 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
           : e.id;
 
       if (_chatRepository != null && _currentUserId != null) {
+        _chatRepository.markConversationRead(
+          chatId: effectiveChatId,
+          readerUserId: _currentUserId!,
+        );
+
         _messagesSubscription = _chatRepository
             .watchMessages(effectiveChatId, _currentUserId!)
             .listen((msgs) {
@@ -399,6 +435,21 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
           ],
         ),
       );
+    });
+
+    on<ChatClosed>((e, emit) async {
+      final effectiveChatId = (_currentUserId != null &&
+              !e.id.startsWith('chat_') &&
+              !e.id.startsWith('group_') &&
+              e.id.isNotEmpty)
+          ? Conversation.directChatId(_currentUserId!, e.id)
+          : e.id;
+
+      if (state.activeId == effectiveChatId || state.activeId == e.id) {
+        await _messagesSubscription?.cancel();
+        _messagesSubscription = null;
+        emit(state.copyWith(activeId: ''));
+      }
     });
     on<ChatSearchChanged>(
       (e, emit) => emit(state.copyWith(searchQuery: e.query)),

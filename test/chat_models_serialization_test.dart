@@ -223,6 +223,51 @@ void main() {
       );
       expect(convForBob.recipientPublicKey, equals('ALICE_PUBLIC_KEY'));
     });
+
+    test('Conversation.fromMap resolves peer display name from participantNames based on current user', () {
+      final docMap = {
+        'participantIds': ['uid_sadman', 'uid_navid'],
+        'lastMessage': 'Hello there',
+        'name': 'Navid',
+        'participantNames': {
+          'uid_sadman': 'Sadman',
+          'uid_navid': 'Navid',
+        },
+      };
+
+      final convForSadman = Conversation.fromMap(
+        docMap,
+        'chat_uid_navid_uid_sadman',
+        currentUserId: 'uid_sadman',
+      );
+      expect(convForSadman.name, equals('Navid'));
+
+      final convForNavid = Conversation.fromMap(
+        docMap,
+        'chat_uid_navid_uid_sadman',
+        currentUserId: 'uid_navid',
+      );
+      expect(convForNavid.name, equals('Sadman'));
+    });
+
+    test('serializes and deserializes participantNames in Conversation', () {
+      const conv = Conversation(
+        id: 'chat_a_b',
+        name: 'Bob',
+        avatarAsset: null,
+        lastMessage: 'Hi',
+        timeLabel: 'Now',
+        participantIds: ['uid_a', 'uid_b'],
+        participantNames: {'uid_a': 'Alice', 'uid_b': 'Bob'},
+      );
+
+      final map = conv.toMap();
+      expect(map['participantNames'], equals({'uid_a': 'Alice', 'uid_b': 'Bob'}));
+
+      final deserialized = Conversation.fromMap(map, 'chat_a_b', currentUserId: 'uid_a');
+      expect(deserialized.name, equals('Bob'));
+      expect(deserialized.participantNames, equals({'uid_a': 'Alice', 'uid_b': 'Bob'}));
+    });
   });
 
   group('RelayContact Model', () {
