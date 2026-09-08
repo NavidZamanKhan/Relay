@@ -366,16 +366,23 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
       _voiceTimer?.cancel();
       _recordingTimer?.cancel();
       await _messagesSubscription?.cancel();
+      final effectiveChatId = (_currentUserId != null &&
+              !e.id.startsWith('chat_') &&
+              !e.id.startsWith('group_') &&
+              e.id.isNotEmpty)
+          ? Conversation.directChatId(_currentUserId!, e.id)
+          : e.id;
+
       if (_chatRepository != null && _currentUserId != null) {
         _messagesSubscription = _chatRepository
-            .watchMessages(e.id, _currentUserId!)
+            .watchMessages(effectiveChatId, _currentUserId!)
             .listen((msgs) {
-          add(_ChatMessagesUpdated(e.id, msgs));
+          add(_ChatMessagesUpdated(effectiveChatId, msgs));
         });
       }
       emit(
         state.copyWith(
-          activeId: e.id,
+          activeId: effectiveChatId,
           composerText: '',
           isRecording: false,
           recordingLocked: false,
@@ -386,7 +393,9 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
           voiceProgress: 0,
           conversations: [
             for (final c in state.conversations)
-              c.id == e.id ? c.copyWith(unread: 0) : c,
+              (c.id == effectiveChatId || c.id == e.id)
+                  ? c.copyWith(unread: 0)
+                  : c,
           ],
         ),
       );
@@ -404,11 +413,29 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
       final id = state.activeId;
 
       if (_chatRepository != null && _currentUserId != null) {
-        final conv = state.conversations.where((c) => c.id == id).firstOrNull;
+        final conv = state.conversations
+            .where((c) => c.id == id || c.recipientId == id)
+            .firstOrNull;
+
+        final effectiveChatId = (id.startsWith('chat_') || id.startsWith('group_'))
+            ? id
+            : (conv != null && conv.id.startsWith('chat_')
+                ? conv.id
+                : Conversation.directChatId(_currentUserId!, id));
+
+        final recipientId = conv?.recipientId ??
+            (effectiveChatId.startsWith('chat_')
+                ? effectiveChatId
+                    .replaceFirst('chat_', '')
+                    .split('_')
+                    .where((u) => u != _currentUserId)
+                    .firstOrNull
+                : null);
+
         final outgoing = RelayMessage(
           id: _id('msg'),
           senderId: _currentUserId!,
-          recipientId: conv?.recipientId,
+          recipientId: recipientId,
           sentAt: DateTime.now(),
           kind: MessageKind.text,
           text: text,
@@ -416,12 +443,15 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
           isMine: true,
         );
 
-        _appendLocal(emit, id, outgoing);
+        _appendLocal(emit, effectiveChatId, outgoing);
+        if (id != effectiveChatId) {
+          _appendLocal(emit, id, outgoing);
+        }
         emit(state.copyWith(composerText: ''));
 
         try {
           await _chatRepository.sendMessage(
-            chatId: id,
+            chatId: effectiveChatId,
             message: outgoing,
             recipientPublicKey: conv?.recipientPublicKey ?? '',
           );
@@ -626,6 +656,7 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
   final IChatRepository? _chatRepository;
   String? _currentUserId;
+  String? get currentUserId => _currentUserId;
   final bool _demoMode;
   StreamSubscription<List<Conversation>>? _conversationsSubscription;
   StreamSubscription<List<RelayMessage>>? _messagesSubscription;

@@ -190,6 +190,39 @@ void main() {
       expect(convBob.recipientId, 'alice_uid');
       expect(convBob.unread, 2);
     });
+
+    test('directChatId returns deterministic sorted composite ID', () {
+      final id1 = Conversation.directChatId('uid_alice', 'uid_bob');
+      final id2 = Conversation.directChatId('uid_bob', 'uid_alice');
+      expect(id1, equals('chat_uid_alice_uid_bob'));
+      expect(id2, equals('chat_uid_alice_uid_bob'));
+      expect(id1, equals(id2));
+    });
+
+    test('Conversation.fromMap extracts recipientPublicKey from participantPublicKeys map', () {
+      final docMap = {
+        'participantIds': ['uid_alice', 'uid_bob'],
+        'lastMessage': 'Testing public key extraction',
+        'participantPublicKeys': {
+          'uid_alice': 'ALICE_PUBLIC_KEY',
+          'uid_bob': 'BOB_PUBLIC_KEY',
+        },
+      };
+
+      final convForAlice = Conversation.fromMap(
+        docMap,
+        'chat_uid_alice_uid_bob',
+        currentUserId: 'uid_alice',
+      );
+      expect(convForAlice.recipientPublicKey, equals('BOB_PUBLIC_KEY'));
+
+      final convForBob = Conversation.fromMap(
+        docMap,
+        'chat_uid_alice_uid_bob',
+        currentUserId: 'uid_bob',
+      );
+      expect(convForBob.recipientPublicKey, equals('ALICE_PUBLIC_KEY'));
+    });
   });
 
   group('RelayContact Model', () {

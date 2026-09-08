@@ -150,11 +150,16 @@ class _NewRelayBody extends StatelessWidget {
 
       final existingIds = convList.map((c) => c.recipientId ?? c.id).toSet();
 
+      final currentUid = context.read<ChatBloc>().currentUserId ?? '';
+
       final remoteContacts = state.registeredContacts
           .where((rc) => !existingIds.contains(rc.id))
-          .map(
-            (rc) => Conversation(
-              id: rc.id,
+          .map((rc) {
+            final canonicalId = currentUid.isNotEmpty
+                ? Conversation.directChatId(currentUid, rc.id)
+                : rc.id;
+            return Conversation(
+              id: canonicalId,
               name: rc.displayName,
               avatarAsset: null,
               lastMessage: rc.phoneNumber.isNotEmpty
@@ -163,8 +168,8 @@ class _NewRelayBody extends StatelessWidget {
               timeLabel: 'Now',
               recipientId: rc.id,
               recipientPublicKey: rc.publicKey,
-            ),
-          );
+            );
+          });
 
       final contacts = [...convList, ...remoteContacts]
           .where(

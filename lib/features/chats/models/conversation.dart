@@ -151,6 +151,12 @@ class Conversation extends Equatable {
       unread = (map['unread'] as num).toInt();
     }
 
+    final keysMap = map['participantPublicKeys'] as Map<dynamic, dynamic>?;
+    final resolvedPublicKey = recipientPublicKey ??
+        (otherParticipantId != null && keysMap != null
+            ? keysMap[otherParticipantId]?.toString()
+            : null);
+
     return Conversation(
       id: id,
       name: name,
@@ -160,7 +166,7 @@ class Conversation extends Equatable {
       lastMessageAt: messageTime,
       participantIds: participants,
       recipientId: otherParticipantId ?? map['recipientId'] as String?,
-      recipientPublicKey: recipientPublicKey,
+      recipientPublicKey: resolvedPublicKey,
       online: (map['online'] as bool?) ?? false,
       unread: unread,
       previewKind: MessageKind.fromString(map['previewKind'] as String?),
@@ -169,6 +175,12 @@ class Conversation extends Equatable {
       isGroup: isGroup,
       muted: (map['muted'] as bool?) ?? false,
     );
+  }
+
+  /// Generates the canonical composite document ID for a 1-on-1 thread.
+  static String directChatId(String uidA, String uidB) {
+    final sorted = [uidA, uidB]..sort();
+    return 'chat_${sorted[0]}_${sorted[1]}';
   }
 
   static String _formatTimeLabel(DateTime date) {
