@@ -134,5 +134,36 @@ void main() {
         throwsArgumentError,
       );
     });
+
+    test('serializes and deserializes isOnline and lastSeen accurately', () {
+      final now = DateTime.utc(2026, 9, 8, 4, 0);
+      final profile = UserProfile(
+        uid: 'user_pres',
+        phoneNumber: '+16505550199',
+        displayName: 'Sadman',
+        about: 'Active now',
+        publicKey: 'KEY',
+        isOnline: true,
+        lastSeen: now,
+      );
+
+      final map = profile.toMap();
+      expect(map['isOnline'], isTrue);
+      expect(map['lastSeen'], isA<Timestamp>());
+
+      final deserialized = UserProfile.fromMap(map, 'user_pres');
+      expect(deserialized.isOnline, isTrue);
+      expect(deserialized.lastSeen?.toUtc(), equals(now));
+    });
+
+    test('updatePresence safely returns without error when unauthenticated', () async {
+      final fakeAuth = FakeFirebaseAuth(user: null);
+      final repo = FirestoreUserRepository(auth: fakeAuth);
+
+      await expectLater(
+        repo.updatePresence(uid: 'user_123', isOnline: true),
+        completes,
+      );
+    });
   });
 }

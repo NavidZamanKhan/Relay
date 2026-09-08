@@ -18,7 +18,8 @@ service cloud.firestore {
         && request.resource.data.about is string
         && request.resource.data.about.size() <= 90
         && request.resource.data.publicKey is string
-        && request.resource.data.publicKey.size() <= 100;
+        && request.resource.data.publicKey.size() <= 100
+        && (!('isOnline' in request.resource.data) || request.resource.data.isOnline is bool);
 
       // Prevent client-side document deletion
       allow delete: if false;
@@ -26,8 +27,9 @@ service cloud.firestore {
 
     // Chats Collection Security Rules
     match /chats/{chatId} {
-      // Allow read if authenticated and user is one of the participants
-      allow read: if request.auth != null && (request.auth.uid in resource.data.participantIds);
+      // Allow read if authenticated and document does not exist yet or user is one of the participants
+      allow read: if request.auth != null
+        && (resource == null || (request.auth.uid in resource.data.participantIds));
 
       // Allow create if authenticated and user is listed in participantIds
       allow create: if request.auth != null
@@ -46,17 +48,20 @@ service cloud.firestore {
       match /messages/{messageId} {
         // Allow read if user is a participant of the parent chat
         allow read: if request.auth != null
+          && exists(/databases/$(database)/documents/chats/$(chatId))
           && (request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participantIds);
 
         // Allow create if user is the sender and a participant of the chat
         allow create: if request.auth != null
           && request.resource.data.senderId == request.auth.uid
+          && exists(/databases/$(database)/documents/chats/$(chatId))
           && (request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participantIds)
           && request.resource.data.encryptedPayload is string
           && request.resource.data.encryptedPayload.size() <= 65536;
 
         // Allow update if participant updating delivery status (sent -> delivered -> read)
         allow update: if request.auth != null
+          && exists(/databases/$(database)/documents/chats/$(chatId))
           && (request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participantIds)
           && request.resource.data.senderId == resource.data.senderId
           && request.resource.data.encryptedPayload == resource.data.encryptedPayload;

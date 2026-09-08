@@ -203,8 +203,8 @@ class FirestoreChatRepository implements IChatRepository {
       delivery: DeliveryStage.sent,
     );
 
-    // Verify parent conversation exists before batch update; create if absent
     final chatDoc = await chatRef.get();
+    final batch = _firestore.batch();
     if (!chatDoc.exists) {
       String myPublicKey = '';
       try {
@@ -232,12 +232,11 @@ class FirestoreChatRepository implements IChatRepository {
           },
       };
 
-      await chatRef.set(newConvData);
-      await messageRef.set(payload.toMap(useServerTimestamp: true));
+      batch.set(chatRef, newConvData);
+      batch.set(messageRef, payload.toMap(useServerTimestamp: true));
+      await batch.commit();
       return;
     }
-
-    final batch = _firestore.batch();
     batch.set(messageRef, payload.toMap(useServerTimestamp: true));
 
     // Update parent conversation thread metadata

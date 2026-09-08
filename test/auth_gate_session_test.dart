@@ -100,6 +100,14 @@ class MockUserRepository implements IUserRepository {
   Stream<UserProfile?> watchUserProfile(String uid) {
     return Stream.value(_profiles[uid]);
   }
+
+  @override
+  Future<void> updatePresence({required String uid, required bool isOnline}) async {
+    final existing = _profiles[uid];
+    if (existing != null) {
+      _profiles[uid] = existing.copyWith(isOnline: isOnline);
+    }
+  }
 }
 
 class FakeSecureStorage extends Fake implements FlutterSecureStorage {

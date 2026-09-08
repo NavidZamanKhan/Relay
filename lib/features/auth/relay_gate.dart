@@ -9,6 +9,9 @@ import 'otp_page.dart';
 import 'phone_entry_page.dart';
 import 'profile_setup_page.dart';
 
+import 'presence_observer.dart';
+import 'repositories/i_user_repository.dart';
+
 class RelayGate extends StatefulWidget {
   const RelayGate({super.key});
 
@@ -17,13 +20,30 @@ class RelayGate extends StatefulWidget {
 }
 
 class _RelayGateState extends State<RelayGate> {
+  PresenceObserver? _presenceObserver;
+
   @override
   void initState() {
     super.initState();
     final authState = context.read<AuthBloc>().state;
     if (authState.step == AuthStep.complete && authState.userId != null) {
       context.read<ChatBloc>().add(ChatStreamStarted(authState.userId!));
+      _startPresence();
     }
+  }
+
+  void _startPresence() {
+    _presenceObserver?.stop();
+    _presenceObserver = PresenceObserver(
+      userRepository: context.read<IUserRepository>(),
+      getUserId: () => context.read<AuthBloc>().state.userId ?? '',
+    )..start();
+  }
+
+  @override
+  void dispose() {
+    _presenceObserver?.stop();
+    super.dispose();
   }
 
   @override
@@ -34,6 +54,9 @@ class _RelayGateState extends State<RelayGate> {
       listener: (context, state) {
         if (state.step == AuthStep.complete && state.userId != null) {
           context.read<ChatBloc>().add(ChatStreamStarted(state.userId!));
+          _startPresence();
+        } else {
+          _presenceObserver?.stop();
         }
       },
       buildWhen: (previous, current) => previous.step != current.step,

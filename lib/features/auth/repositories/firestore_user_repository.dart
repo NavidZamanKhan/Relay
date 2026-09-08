@@ -72,4 +72,17 @@ class FirestoreUserRepository implements IUserRepository {
       return UserProfile.fromMap(snapshot.data()!, uid);
     });
   }
+
+  @override
+  Future<void> updatePresence({required String uid, required bool isOnline}) async {
+    final currentUser = _auth.currentUser;
+    if (currentUser == null || currentUser.uid != uid) return;
+
+    try {
+      await _usersCollection.doc(uid).update({
+        'isOnline': isOnline,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (_) {}
+  }
 }

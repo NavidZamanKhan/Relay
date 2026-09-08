@@ -11,6 +11,8 @@ class UserProfile extends Equatable {
     required this.publicKey,
     this.createdAt,
     this.updatedAt,
+    this.isOnline = false,
+    this.lastSeen,
   });
 
   final String uid;
@@ -20,6 +22,8 @@ class UserProfile extends Equatable {
   final String publicKey;
   final DateTime? createdAt;
   final DateTime? updatedAt;
+  final bool isOnline;
+  final DateTime? lastSeen;
 
   UserProfile copyWith({
     String? uid,
@@ -29,6 +33,8 @@ class UserProfile extends Equatable {
     String? publicKey,
     DateTime? createdAt,
     DateTime? updatedAt,
+    bool? isOnline,
+    DateTime? lastSeen,
   }) {
     return UserProfile(
       uid: uid ?? this.uid,
@@ -38,6 +44,8 @@ class UserProfile extends Equatable {
       publicKey: publicKey ?? this.publicKey,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      isOnline: isOnline ?? this.isOnline,
+      lastSeen: lastSeen ?? this.lastSeen,
     );
   }
 
@@ -49,7 +57,9 @@ class UserProfile extends Equatable {
       'displayName': displayName,
       'about': about,
       'publicKey': publicKey,
+      'isOnline': isOnline,
       'updatedAt': FieldValue.serverTimestamp(),
+      if (lastSeen != null) 'lastSeen': Timestamp.fromDate(lastSeen!),
     };
   }
 
@@ -70,6 +80,8 @@ class UserProfile extends Equatable {
       publicKey: map['publicKey'] as String? ?? '',
       createdAt: parseTimestamp(map['createdAt']),
       updatedAt: parseTimestamp(map['updatedAt']),
+      isOnline: (map['isOnline'] as bool?) ?? false,
+      lastSeen: parseTimestamp(map['lastSeen']),
     );
   }
 
@@ -82,5 +94,7 @@ class UserProfile extends Equatable {
         publicKey,
         createdAt,
         updatedAt,
+        isOnline,
+        lastSeen,
       ];
 }

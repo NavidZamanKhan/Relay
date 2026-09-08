@@ -10,4 +10,7 @@ abstract interface class IUserRepository {
 
   /// Stream of user profile changes for real-time presence or profile updates.
   Stream<UserProfile?> watchUserProfile(String uid);
+
+  /// Updates presence status (online/offline) and timestamp at `users/{uid}`.
+  Future<void> updatePresence({required String uid, required bool isOnline});
 }

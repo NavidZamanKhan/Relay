@@ -12,6 +12,9 @@ import 'relay_message_list.dart';
 import 'message_composer.dart';
 import 'signal_background.dart';
 
+import '../auth/models/user_profile.dart';
+import '../auth/repositories/i_user_repository.dart';
+
 class ConversationPage extends StatelessWidget {
   const ConversationPage({
     super.key,
@@ -19,6 +22,7 @@ class ConversationPage extends StatelessWidget {
     this.contactName = 'Aisha',
     this.avatarAsset = 'assets/images/aisha.png',
     this.online = true,
+    this.recipientId,
   });
 
   static void open(BuildContext context, Conversation chat) =>
@@ -37,6 +41,7 @@ class ConversationPage extends StatelessWidget {
           contactName: chat.name,
           avatarAsset: chat.avatarAsset,
           online: chat.online,
+          recipientId: chat.recipientId,
         ),
       ),
     );
@@ -46,6 +51,7 @@ class ConversationPage extends StatelessWidget {
   final String contactName;
   final String? avatarAsset;
   final bool online;
+  final String? recipientId;
 
   @override
   Widget build(BuildContext context) {
@@ -61,6 +67,7 @@ class ConversationPage extends StatelessWidget {
                 contactName: contactName,
                 avatarAsset: avatarAsset,
                 online: online,
+                recipientId: recipientId,
               ),
               const Expanded(
                 child: RelayMessageList(
@@ -83,15 +90,48 @@ class _ConversationHeader extends StatelessWidget {
     required this.contactName,
     required this.avatarAsset,
     required this.online,
+    this.recipientId,
   });
 
   final String contactId;
   final String contactName;
   final String? avatarAsset;
   final bool online;
+  final String? recipientId;
 
   @override
   Widget build(BuildContext context) {
+    IUserRepository? userRepo;
+    try {
+      userRepo = context.read<IUserRepository>();
+    } catch (_) {}
+
+    final currentUserId = context.read<ChatBloc>().currentUserId;
+    final effectivePeerUid = recipientId ??
+        (contactId.startsWith('chat_')
+            ? contactId
+                .replaceFirst('chat_', '')
+                .split('_')
+                .where((id) => id != currentUserId)
+                .firstOrNull
+            : null);
+
+    if (userRepo != null &&
+        effectivePeerUid != null &&
+        effectivePeerUid.isNotEmpty) {
+      return StreamBuilder<UserProfile?>(
+        stream: userRepo.watchUserProfile(effectivePeerUid),
+        builder: (context, snapshot) {
+          final liveOnline = snapshot.data?.isOnline ?? online;
+          return _buildBar(context, isOnline: liveOnline);
+        },
+      );
+    }
+
+    return _buildBar(context, isOnline: online);
+  }
+
+  Widget _buildBar(BuildContext context, {required bool isOnline}) {
     return Container(
       height: 64,
       padding: const EdgeInsets.fromLTRB(3, 4, 5, 4),
@@ -115,7 +155,7 @@ class _ConversationHeader extends StatelessWidget {
             child: RelayAvatar(
               name: contactName,
               asset: avatarAsset,
-              online: online,
+              online: isOnline,
               size: 40,
             ),
           ),
@@ -139,10 +179,10 @@ class _ConversationHeader extends StatelessWidget {
                     child: Text(
                       typing
                           ? 'typing…'
-                          : (online ? 'Online' : 'Last seen recently'),
+                          : (isOnline ? 'Online' : 'Last seen recently'),
                       key: ValueKey(typing),
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: typing || online
+                        color: typing || isOnline
                             ? RelayColors.mint
                             : Theme.of(context).textTheme.bodySmall?.color,
                         fontSize: 11.5,

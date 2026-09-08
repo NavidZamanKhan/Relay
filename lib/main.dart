@@ -8,6 +8,7 @@ import 'core/crypto/crypto_service.dart';
 import 'features/auth/auth_bloc.dart';
 import 'features/auth/repositories/firebase_auth_repository.dart';
 import 'features/auth/repositories/firestore_user_repository.dart';
+import 'features/auth/repositories/i_user_repository.dart';
 import 'features/chats/chat_bloc.dart';
 import 'features/chats/repositories/firestore_chat_repository.dart';
 import 'features/chats/repositories/i_chat_repository.dart';
@@ -24,8 +25,11 @@ Future<void> main() async {
   final chatRepository = FirestoreChatRepository(cryptoService: cryptoService);
 
   runApp(
-    RepositoryProvider<IChatRepository>.value(
-      value: chatRepository,
+    MultiRepositoryProvider(
+      providers: [
+        RepositoryProvider<IChatRepository>.value(value: chatRepository),
+        RepositoryProvider<IUserRepository>.value(value: userRepository),
+      ],
       child: MultiBlocProvider(
         providers: [
           BlocProvider(create: (_) => AppBloc()),
