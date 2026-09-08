@@ -13,6 +13,7 @@ class UserProfile extends Equatable {
     this.updatedAt,
     this.isOnline = false,
     this.lastSeen,
+    this.encryptedKeyVault,
   });
 
   final String uid;
@@ -24,6 +25,7 @@ class UserProfile extends Equatable {
   final DateTime? updatedAt;
   final bool isOnline;
   final DateTime? lastSeen;
+  final String? encryptedKeyVault;
 
   UserProfile copyWith({
     String? uid,
@@ -35,6 +37,7 @@ class UserProfile extends Equatable {
     DateTime? updatedAt,
     bool? isOnline,
     DateTime? lastSeen,
+    String? encryptedKeyVault,
   }) {
     return UserProfile(
       uid: uid ?? this.uid,
@@ -46,6 +49,7 @@ class UserProfile extends Equatable {
       updatedAt: updatedAt ?? this.updatedAt,
       isOnline: isOnline ?? this.isOnline,
       lastSeen: lastSeen ?? this.lastSeen,
+      encryptedKeyVault: encryptedKeyVault ?? this.encryptedKeyVault,
     );
   }
 
@@ -60,6 +64,7 @@ class UserProfile extends Equatable {
       'isOnline': isOnline,
       'updatedAt': FieldValue.serverTimestamp(),
       if (lastSeen != null) 'lastSeen': Timestamp.fromDate(lastSeen!),
+      if (encryptedKeyVault != null) 'encryptedKeyVault': encryptedKeyVault,
     };
   }
 
@@ -82,6 +87,7 @@ class UserProfile extends Equatable {
       updatedAt: parseTimestamp(map['updatedAt']),
       isOnline: (map['isOnline'] as bool?) ?? false,
       lastSeen: parseTimestamp(map['lastSeen']),
+      encryptedKeyVault: map['encryptedKeyVault'] as String?,
     );
   }
 
@@ -96,5 +102,6 @@ class UserProfile extends Equatable {
         updatedAt,
         isOnline,
         lastSeen,
+        encryptedKeyVault,
       ];
 }

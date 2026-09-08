@@ -31,6 +31,7 @@ class FirestoreChatRepository implements IChatRepository {
 
   final Map<String, List<int>> _sharedSecretCache = {};
   final Map<String, String> _userDisplayNameCache = {};
+  final Map<String, String> _userPublicKeyCache = {};
 
   CollectionReference<Map<String, dynamic>> get _chatsCollection =>
       _firestore.collection('chats');
@@ -158,8 +159,14 @@ class FirestoreChatRepository implements IChatRepository {
                 : rawMessage.senderId;
 
             if (peerUid != null) {
-              final peerDoc = await _usersCollection.doc(peerUid).get();
-              final peerPublicKey = peerDoc.data()?['publicKey'] as String?;
+              String? peerPublicKey = _userPublicKeyCache[peerUid];
+              if (peerPublicKey == null) {
+                final peerDoc = await _usersCollection.doc(peerUid).get();
+                peerPublicKey = peerDoc.data()?['publicKey'] as String?;
+                if (peerPublicKey != null && peerPublicKey.isNotEmpty) {
+                  _userPublicKeyCache[peerUid] = peerPublicKey;
+                }
+              }
 
               if (peerPublicKey != null && peerPublicKey.isNotEmpty) {
                 final secret = await _getOrDeriveSecret(peerPublicKey);

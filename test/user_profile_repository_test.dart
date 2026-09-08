@@ -29,6 +29,7 @@ void main() {
         displayName: 'Navid',
         about: 'Building Relay.',
         publicKey: 'base64_x25519_key_32bytes_mock',
+        encryptedKeyVault: '{"ciphertext":"c123","nonce":"n123","v":1}',
       );
 
       final map = profile.toMap();
@@ -37,6 +38,7 @@ void main() {
       expect(map['displayName'], 'Navid');
       expect(map['about'], 'Building Relay.');
       expect(map['publicKey'], 'base64_x25519_key_32bytes_mock');
+      expect(map['encryptedKeyVault'], '{"ciphertext":"c123","nonce":"n123","v":1}');
       expect(map['updatedAt'], isA<FieldValue>());
     });
 
@@ -50,6 +52,7 @@ void main() {
       expect(profile.about, '');
       expect(profile.phoneNumber, '');
       expect(profile.publicKey, '');
+      expect(profile.encryptedKeyVault, isNull);
       expect(profile.createdAt, isNull);
     });
   });

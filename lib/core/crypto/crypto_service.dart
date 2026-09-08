@@ -161,4 +161,94 @@ class CryptoService {
     await _storage.delete(key: _publicKeyKey);
     await _storage.delete(key: _privateKeyKey);
   }
+
+  /// Returns whether a valid local private key is currently stored on this device.
+  Future<bool> hasLocalPrivateKey() async {
+    final priv = await _storage.read(key: _privateKeyKey);
+    return priv != null && priv.trim().isNotEmpty;
+  }
+
+  /// Derives a 256-bit vault key tied to the user authenticated UID.
+  Future<List<int>> _deriveVaultKey(String uid) async {
+    final salt = utf8.encode('relay.keyvault.v1.salt:');
+    final combined = [...salt, ...utf8.encode(uid)];
+    final hash = await Sha256().hash(combined);
+    return hash.bytes;
+  }
+
+  /// Exports the user private key as an AES-GCM encrypted vault bundle.
+  Future<String> exportEncryptedKeyVault(String uid) async {
+    if (uid.trim().isEmpty) {
+      throw ArgumentError('UID cannot be empty for key vault export.');
+    }
+    var privBase64 = await _storage.read(key: _privateKeyKey);
+    if (privBase64 == null || privBase64.isEmpty) {
+      await getOrCreatePublicKey();
+      privBase64 = await _storage.read(key: _privateKeyKey);
+    }
+    if (privBase64 == null || privBase64.isEmpty) {
+      throw StateError('Cannot export vault: private key generation failed.');
+    }
+
+    final vaultKey = await _deriveVaultKey(uid);
+    final encrypted = await encryptPayload(
+      plaintext: privBase64,
+      sharedSecretBytes: vaultKey,
+    );
+
+    return jsonEncode({
+      'ciphertext': encrypted.ciphertext,
+      'nonce': encrypted.nonce,
+      'v': 1,
+    });
+  }
+
+  /// Imports an AES-GCM encrypted vault bundle, restores the private key,
+  /// reconstructs the public key, and persists them into secure storage.
+  Future<String> importEncryptedKeyVault({
+    required String encryptedVault,
+    required String uid,
+  }) async {
+    if (uid.trim().isEmpty) {
+      throw ArgumentError('UID cannot be empty for key vault import.');
+    }
+    if (encryptedVault.trim().isEmpty) {
+      throw ArgumentError('Encrypted vault cannot be empty.');
+    }
+
+    final Map<String, dynamic> decoded;
+    try {
+      decoded = jsonDecode(encryptedVault) as Map<String, dynamic>;
+    } catch (_) {
+      throw ArgumentError('Malformed key vault JSON format.');
+    }
+
+    final ciphertext = decoded['ciphertext'] as String?;
+    final nonce = decoded['nonce'] as String?;
+    if (ciphertext == null || nonce == null) {
+      throw ArgumentError('Key vault payload missing ciphertext or nonce.');
+    }
+
+    final vaultKey = await _deriveVaultKey(uid);
+    final privBase64 = await decryptPayload(
+      ciphertextBase64: ciphertext,
+      nonceBase64: nonce,
+      sharedSecretBytes: vaultKey,
+    );
+
+    final privBytes = base64Decode(privBase64);
+    if (privBytes.length != 32) {
+      throw StateError('Decrypted private key has invalid length.');
+    }
+
+    final keyPair = await _algorithm.newKeyPairFromSeed(privBytes);
+    final pubKey = await keyPair.extractPublicKey();
+    final pubBase64 = base64Encode(pubKey.bytes);
+
+    await _storage.write(key: _publicKeyKey, value: pubBase64);
+    await _storage.write(key: _privateKeyKey, value: privBase64);
+
+    return pubBase64;
+  }
 }
+

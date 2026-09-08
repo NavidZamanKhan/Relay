@@ -283,6 +283,61 @@ void main() {
       await bloc.close();
     });
 
+    test('OTP verification on fresh device restores private key from encrypted vault', () async {
+      const uid = 'user_otp_success';
+      // First, simulate device 1 exporting a vault
+      final dev1Storage = FakeSecureStorage();
+      final dev1Crypto = CryptoService(storage: dev1Storage);
+      final dev1Pub = await dev1Crypto.getOrCreatePublicKey();
+      final dev1Priv = await dev1Storage.read(key: 'relay_x25519_private_key');
+      final vault = await dev1Crypto.exportEncryptedKeyVault(uid);
+
+      userRepo.setProfile(
+        UserProfile(
+          uid: uid,
+          phoneNumber: '+16505551234',
+          displayName: 'Sadman',
+          about: 'Encrypted relaying',
+          publicKey: dev1Pub,
+          encryptedKeyVault: vault,
+        ),
+      );
+
+      // Fresh device 2 with empty storage
+      final dev2Storage = FakeSecureStorage();
+      final dev2Crypto = CryptoService(storage: dev2Storage);
+      expect(await dev2Crypto.hasLocalPrivateKey(), isFalse);
+
+      final bloc = AuthBloc(
+        authRepository: authRepo,
+        userRepository: userRepo,
+        cryptoService: dev2Crypto,
+        previewAuthenticated: false,
+      );
+
+      bloc.add(const AuthPhoneSubmitted('+16505551234'));
+      await expectLater(
+        bloc.stream,
+        emitsThrough(predicate<AuthState>((s) => s.step == AuthStep.otp)),
+      );
+
+      bloc.add(const AuthOtpChanged('123456'));
+      await expectLater(
+        bloc.stream,
+        emitsThrough(
+          predicate<AuthState>(
+            (s) => s.step == AuthStep.complete && s.displayName == 'Sadman' && s.publicKey == dev1Pub,
+          ),
+        ),
+      );
+
+      // Verify that device 2 now has the identical private key
+      expect(await dev2Crypto.hasLocalPrivateKey(), isTrue);
+      expect(await dev2Storage.read(key: 'relay_x25519_private_key'), equals(dev1Priv));
+
+      await bloc.close();
+    });
+
     test('sign out resets state to phone step and wipes cryptographic keys', () async {
       final bloc = AuthBloc(
         authRepository: authRepo,

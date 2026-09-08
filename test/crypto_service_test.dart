@@ -160,5 +160,86 @@ void main() {
       expect(await storage.read(key: 'relay_x25519_public_key'), isNull);
       expect(await storage.read(key: 'relay_x25519_private_key'), isNull);
     });
+
+    test('hasLocalPrivateKey accurately reports presence of private key', () async {
+      expect(await cryptoService.hasLocalPrivateKey(), isFalse);
+      await cryptoService.getOrCreatePublicKey();
+      expect(await cryptoService.hasLocalPrivateKey(), isTrue);
+      await cryptoService.clearKeys();
+      expect(await cryptoService.hasLocalPrivateKey(), isFalse);
+    });
+
+    test('exportEncryptedKeyVault and importEncryptedKeyVault restores keys on new device', () async {
+      const uid = 'test_user_uid_123';
+      final origPub = await cryptoService.getOrCreatePublicKey();
+      final origPriv = await storage.read(key: 'relay_x25519_private_key');
+
+      final vault = await cryptoService.exportEncryptedKeyVault(uid);
+      expect(vault, isNotEmpty);
+      final parsed = jsonDecode(vault) as Map<String, dynamic>;
+      expect(parsed['ciphertext'], isNotNull);
+      expect(parsed['nonce'], isNotNull);
+
+      // Simulate a brand new device / simulator with empty storage
+      final freshStorage = FakeSecureStorage();
+      final freshCrypto = CryptoService(storage: freshStorage);
+      expect(await freshCrypto.hasLocalPrivateKey(), isFalse);
+
+      final restoredPub = await freshCrypto.importEncryptedKeyVault(
+        encryptedVault: vault,
+        uid: uid,
+      );
+
+      expect(restoredPub, equals(origPub));
+      expect(await freshStorage.read(key: 'relay_x25519_private_key'), equals(origPriv));
+      expect(await freshCrypto.hasLocalPrivateKey(), isTrue);
+    });
+
+    test('restored device key derives identical shared secret with remote peer', () async {
+      const uidAlice = 'user_alice_456';
+      final storageAliceOrig = FakeSecureStorage();
+      final cryptoAliceOrig = CryptoService(storage: storageAliceOrig);
+      await cryptoAliceOrig.getOrCreatePublicKey();
+
+      // Remote peer Bob
+      final storageBob = FakeSecureStorage();
+      final cryptoBob = CryptoService(storage: storageBob);
+      final bobPub = await cryptoBob.getOrCreatePublicKey();
+
+      // Secret derived by Alice on device 1
+      final origSecretAlice = await cryptoAliceOrig.deriveSharedSecret(peerPublicKeyBase64: bobPub);
+
+      // Export Alice vault
+      final aliceVault = await cryptoAliceOrig.exportEncryptedKeyVault(uidAlice);
+
+      // Alice logs into device 2 (new simulator)
+      final storageAliceDevice2 = FakeSecureStorage();
+      final cryptoAliceDevice2 = CryptoService(storage: storageAliceDevice2);
+      await cryptoAliceDevice2.importEncryptedKeyVault(encryptedVault: aliceVault, uid: uidAlice);
+
+      // Alice on device 2 derives secret with Bob
+      final newSecretAlice = await cryptoAliceDevice2.deriveSharedSecret(peerPublicKeyBase64: bobPub);
+
+      expect(newSecretAlice, equals(origSecretAlice));
+    });
+
+    test('importEncryptedKeyVault rejects wrong UID or tampered payload', () async {
+      const uid = 'legit_user_789';
+      await cryptoService.getOrCreatePublicKey();
+      final vault = await cryptoService.exportEncryptedKeyVault(uid);
+
+      final freshStorage = FakeSecureStorage();
+      final freshCrypto = CryptoService(storage: freshStorage);
+
+      // Trying to import with attacker UID must fail MAC validation
+      expect(
+        () => freshCrypto.importEncryptedKeyVault(
+          encryptedVault: vault,
+          uid: 'attacker_uid_999',
+        ),
+        throwsA(anything),
+      );
+    });
   });
 }
+

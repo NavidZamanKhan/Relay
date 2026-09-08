@@ -41,6 +41,14 @@ class RelayApp extends StatelessWidget {
             );
           },
           home: const RelayGate(),
+          onGenerateRoute: (settings) => MaterialPageRoute<void>(
+            settings: settings,
+            builder: (_) => const RelayGate(),
+          ),
+          onUnknownRoute: (settings) => MaterialPageRoute<void>(
+            settings: settings,
+            builder: (_) => const RelayGate(),
+          ),
         );
       },
     );

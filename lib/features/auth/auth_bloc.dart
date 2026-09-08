@@ -498,6 +498,10 @@ final class AuthBloc extends Bloc<AuthEvent, AuthState> {
     }
 
     if (existingProfile != null && existingProfile.displayName.isNotEmpty) {
+      final effectivePub = await _syncOrRestoreKeyVault(
+        uid: existingProfile.uid,
+        profile: existingProfile,
+      );
       emit(
         state.copyWith(
           step: AuthStep.complete,
@@ -506,7 +510,7 @@ final class AuthBloc extends Bloc<AuthEvent, AuthState> {
           phone: existingProfile.phoneNumber.isNotEmpty
               ? existingProfile.phoneNumber
               : state.phone,
-          publicKey: existingProfile.publicKey,
+          publicKey: effectivePub,
           userId: uid,
           isVerifying: false,
           clearError: true,
@@ -620,8 +624,12 @@ final class AuthBloc extends Bloc<AuthEvent, AuthState> {
         return;
       }
 
-      // Securely retrieve or generate X25519 identity public key
+      // Securely retrieve or generate X25519 identity public key and key vault
       final publicKey = await _cryptoService.getOrCreatePublicKey();
+      String? keyVault;
+      try {
+        keyVault = await _cryptoService.exportEncryptedKeyVault(uid);
+      } catch (_) {}
 
       final profile = UserProfile(
         uid: uid,
@@ -629,6 +637,7 @@ final class AuthBloc extends Bloc<AuthEvent, AuthState> {
         displayName: sanitizedName,
         about: sanitizedAbout,
         publicKey: publicKey,
+        encryptedKeyVault: keyVault,
       );
 
       await _userRepository.saveUserProfile(profile);
@@ -717,6 +726,10 @@ final class AuthBloc extends Bloc<AuthEvent, AuthState> {
     }
 
     if (profile != null && profile.displayName.isNotEmpty) {
+      final effectivePub = await _syncOrRestoreKeyVault(
+        uid: user.uid,
+        profile: profile,
+      );
       emit(
         state.copyWith(
           step: AuthStep.complete,
@@ -725,7 +738,7 @@ final class AuthBloc extends Bloc<AuthEvent, AuthState> {
           phone: profile.phoneNumber.isNotEmpty
               ? profile.phoneNumber
               : (user.phoneNumber ?? state.phone),
-          publicKey: profile.publicKey,
+          publicKey: effectivePub,
           userId: user.uid,
           isVerifying: false,
           clearError: true,
@@ -741,6 +754,58 @@ final class AuthBloc extends Bloc<AuthEvent, AuthState> {
           clearError: true,
         ),
       );
+    }
+  }
+
+  Future<String> _syncOrRestoreKeyVault({
+    required String uid,
+    required UserProfile profile,
+  }) async {
+    if (_cryptoService == null) return profile.publicKey;
+
+    final hasKey = await _cryptoService.hasLocalPrivateKey();
+    if (!hasKey) {
+      // Fresh simulator or newly installed device: attempt to restore from vault
+      if (profile.encryptedKeyVault != null &&
+          profile.encryptedKeyVault!.isNotEmpty) {
+        try {
+          return await _cryptoService.importEncryptedKeyVault(
+            encryptedVault: profile.encryptedKeyVault!,
+            uid: uid,
+          );
+        } catch (_) {
+          // If vault decryption fails (e.g. tampered data), generate new keypair
+          final newPub = await _cryptoService.getOrCreatePublicKey();
+          try {
+            final newVault = await _cryptoService.exportEncryptedKeyVault(uid);
+            await _userRepository?.saveUserProfile(
+              profile.copyWith(publicKey: newPub, encryptedKeyVault: newVault),
+            );
+          } catch (_) {}
+          return newPub;
+        }
+      } else {
+        // Legacy profile without vault: generate keypair and backfill vault
+        final newPub = await _cryptoService.getOrCreatePublicKey();
+        try {
+          final newVault = await _cryptoService.exportEncryptedKeyVault(uid);
+          await _userRepository?.saveUserProfile(
+            profile.copyWith(publicKey: newPub, encryptedKeyVault: newVault),
+          );
+        } catch (_) {}
+        return newPub;
+      }
+    } else {
+      // Local key exists: backfill vault if absent
+      if (profile.encryptedKeyVault == null) {
+        try {
+          final vault = await _cryptoService.exportEncryptedKeyVault(uid);
+          await _userRepository?.saveUserProfile(
+            profile.copyWith(encryptedKeyVault: vault),
+          );
+        } catch (_) {}
+      }
+      return profile.publicKey;
     }
   }
 
