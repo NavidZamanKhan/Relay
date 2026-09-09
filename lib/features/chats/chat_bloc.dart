@@ -158,7 +158,10 @@ final class ChatVoiceSpeedChanged extends ChatEvent {
 }
 
 final class ChatRecordingStarted extends ChatEvent {
-  const ChatRecordingStarted();
+  const ChatRecordingStarted({this.locked = false});
+  final bool locked;
+  @override
+  List<Object?> get props => [locked];
 }
 
 final class ChatRecordingTicked extends ChatEvent {
@@ -729,7 +732,7 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
       emit(
         state.copyWith(
           isRecording: true,
-          recordingLocked: false,
+          recordingLocked: e.locked,
           recordingSeconds: 0,
           cancelProgress: 0,
           voicePaused: true,

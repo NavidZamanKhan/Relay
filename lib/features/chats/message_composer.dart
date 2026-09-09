@@ -251,7 +251,7 @@ class _MessageComposerState extends State<MessageComposer>
                       button: true,
                       label: hasText
                           ? 'Send message'
-                          : state.recordingLocked
+                          : state.isRecording
                           ? 'Send voice note'
                           : 'Record voice note',
                       child: GestureDetector(
@@ -268,12 +268,11 @@ class _MessageComposerState extends State<MessageComposer>
                         onTap: () {
                           if (hasText) {
                             _sendText();
-                          } else if (state.recordingLocked) {
+                          } else if (state.isRecording) {
                             _bloc.add(const ChatRecordingSent());
-                          } else if (!state.isRecording) {
-                            // A tap offers an accessible hands-free equivalent of a hold.
-                            _bloc.add(const ChatRecordingStarted());
-                            _bloc.add(const ChatRecordingLocked());
+                          } else {
+                            // A tap offers an accessible hands-free recording session.
+                            _bloc.add(const ChatRecordingStarted(locked: true));
                           }
                         },
                         child: ValueListenableBuilder<Offset>(
@@ -305,10 +304,10 @@ class _MessageComposerState extends State<MessageComposer>
                                 RelayMotion.quick,
                               ),
                               child: Icon(
-                                hasText || state.recordingLocked
+                                hasText || state.isRecording
                                     ? CupertinoIcons.arrow_up
                                     : CupertinoIcons.mic,
-                                key: ValueKey(hasText || state.recordingLocked),
+                                key: ValueKey(hasText || state.isRecording),
                                 size: 22,
                                 color: hasText || state.isRecording
                                     ? RelayColors.ink
@@ -344,20 +343,24 @@ class _MessageComposerState extends State<MessageComposer>
               Positioned(
                 right: 2,
                 bottom: 88,
-                child: Container(
-                  width: 44,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surface,
-                    borderRadius: BorderRadius.circular(22),
-                    border: Border.all(color: Theme.of(context).dividerColor),
-                  ),
-                  child: const Column(
-                    children: [
-                      Icon(CupertinoIcons.lock, size: 17),
-                      SizedBox(height: 13),
-                      Icon(CupertinoIcons.chevron_up, size: 13),
-                    ],
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => _bloc.add(const ChatRecordingLocked()),
+                  child: Container(
+                    width: 44,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.surface,
+                      borderRadius: BorderRadius.circular(22),
+                      border: Border.all(color: Theme.of(context).dividerColor),
+                    ),
+                    child: const Column(
+                      children: [
+                        Icon(CupertinoIcons.lock, size: 17),
+                        SizedBox(height: 13),
+                        Icon(CupertinoIcons.chevron_up, size: 13),
+                      ],
+                    ),
                   ),
                 ),
               ),
