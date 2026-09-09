@@ -73,6 +73,7 @@ class FirestoreChatRepository implements IChatRepository {
         );
 
         String? resolvedFallbackName;
+        String? resolvedPublicKey;
         if (!isGroup && otherParticipantId.isNotEmpty) {
           final rawNames = data['participantNames'] as Map<dynamic, dynamic>?;
           if (rawNames != null &&
@@ -100,6 +101,32 @@ class FirestoreChatRepository implements IChatRepository {
               } catch (_) {}
             }
           }
+
+          // Resolve canonical public key and self-heal stale chat metadata
+          final rawKeys = data['participantPublicKeys'] as Map<dynamic, dynamic>?;
+          final existingChatKey = rawKeys?[otherParticipantId]?.toString().trim();
+
+          if (_userPublicKeyCache.containsKey(otherParticipantId)) {
+            resolvedPublicKey = _userPublicKeyCache[otherParticipantId];
+          } else {
+            try {
+              final userDoc =
+                  await _usersCollection.doc(otherParticipantId).get();
+              final pub = (userDoc.data()?['publicKey'] as String?)?.trim();
+              if (pub != null && pub.isNotEmpty) {
+                _userPublicKeyCache[otherParticipantId] = pub;
+                resolvedPublicKey = pub;
+              }
+            } catch (_) {}
+          }
+
+          if (resolvedPublicKey != null &&
+              resolvedPublicKey.isNotEmpty &&
+              resolvedPublicKey != existingChatKey) {
+            _chatsCollection.doc(doc.id).update({
+              'participantPublicKeys.$otherParticipantId': resolvedPublicKey,
+            }).catchError((_) {});
+          }
         }
 
         conversations.add(
@@ -108,6 +135,7 @@ class FirestoreChatRepository implements IChatRepository {
             doc.id,
             currentUserId: currentUserId,
             fallbackName: resolvedFallbackName,
+            recipientPublicKey: resolvedPublicKey,
           ),
         );
       }
@@ -218,13 +246,23 @@ class FirestoreChatRepository implements IChatRepository {
       effectiveRecipientId = parts.where((p) => p != user.uid).firstOrNull;
     }
 
-    // Resolve recipient public key
-    String effectivePublicKey = recipientPublicKey.trim();
-    if (effectivePublicKey.isEmpty && effectiveRecipientId != null) {
+    // Resolve recipient public key: users directory is canonical source of truth
+    String effectivePublicKey = '';
+    if (effectiveRecipientId != null) {
       try {
         final peerDoc = await _usersCollection.doc(effectiveRecipientId).get();
-        effectivePublicKey = (peerDoc.data()?['publicKey'] as String?)?.trim() ?? '';
-      } catch (_) {}
+        final pub = (peerDoc.data()?['publicKey'] as String?)?.trim();
+        if (pub != null && pub.isNotEmpty) {
+          _userPublicKeyCache[effectiveRecipientId] = pub;
+          effectivePublicKey = pub;
+        }
+      } catch (_) {
+        effectivePublicKey = _userPublicKeyCache[effectiveRecipientId] ?? '';
+      }
+    }
+
+    if (effectivePublicKey.isEmpty) {
+      effectivePublicKey = recipientPublicKey.trim();
     }
 
     String? ciphertext;
@@ -336,8 +374,28 @@ class FirestoreChatRepository implements IChatRepository {
     };
 
     final existingData = chatDoc.data();
-    if (existingData != null && existingData['participantNames'] == null) {
-      updateData['participantNames'] = participantNames;
+    if (existingData != null) {
+      if (existingData['participantNames'] == null) {
+        updateData['participantNames'] = participantNames;
+      }
+      // Synchronize recipient's public key on parent chat doc if changed or missing
+      if (effectiveRecipientId != null && effectivePublicKey.isNotEmpty) {
+        final existingKeys = existingData['participantPublicKeys'] as Map<dynamic, dynamic>?;
+        if (existingKeys?[effectiveRecipientId] != effectivePublicKey) {
+          updateData['participantPublicKeys.$effectiveRecipientId'] = effectivePublicKey;
+        }
+      }
+      // Synchronize sender's public key on parent chat doc if changed or missing
+      String myPublicKey = '';
+      try {
+        myPublicKey = await _cryptoService.getOrCreatePublicKey();
+      } catch (_) {}
+      if (myPublicKey.isNotEmpty) {
+        final existingKeys = existingData['participantPublicKeys'] as Map<dynamic, dynamic>?;
+        if (existingKeys?[user.uid] != myPublicKey) {
+          updateData['participantPublicKeys.${user.uid}'] = myPublicKey;
+        }
+      }
     }
 
     if (effectiveRecipientId != null) {
@@ -489,12 +547,23 @@ class FirestoreChatRepository implements IChatRepository {
     final sorted = [currentUserId, recipientUserId]..sort();
     final canonicalId = 'chat_${sorted[0]}_${sorted[1]}';
 
-    String resolvedPeerKey = recipientPublicKey?.trim() ?? '';
-    if (resolvedPeerKey.isEmpty) {
+    String resolvedPeerKey = '';
+    if (_userPublicKeyCache.containsKey(recipientUserId)) {
+      resolvedPeerKey = _userPublicKeyCache[recipientUserId]!;
+    } else {
       try {
         final peerDoc = await _usersCollection.doc(recipientUserId).get();
-        resolvedPeerKey = (peerDoc.data()?['publicKey'] as String?)?.trim() ?? '';
-      } catch (_) {}
+        final pub = (peerDoc.data()?['publicKey'] as String?)?.trim();
+        if (pub != null && pub.isNotEmpty) {
+          _userPublicKeyCache[recipientUserId] = pub;
+          resolvedPeerKey = pub;
+        }
+      } catch (_) {
+        resolvedPeerKey = _userPublicKeyCache[recipientUserId] ?? '';
+      }
+    }
+    if (resolvedPeerKey.isEmpty) {
+      resolvedPeerKey = recipientPublicKey?.trim() ?? '';
     }
 
     String myPublicKey = '';
@@ -525,13 +594,23 @@ class FirestoreChatRepository implements IChatRepository {
     if (snapshot.exists && snapshot.data() != null) {
       final data = snapshot.data()!;
       final updates = <String, dynamic>{};
-      if (data['participantPublicKeys'] == null &&
-          (myPublicKey.isNotEmpty || resolvedPeerKey.isNotEmpty)) {
-        updates['participantPublicKeys'] = {
-          currentUserId: myPublicKey,
-          recipientUserId: resolvedPeerKey,
-        };
+      final existingKeys = data['participantPublicKeys'] as Map<dynamic, dynamic>?;
+      if (existingKeys == null) {
+        if (myPublicKey.isNotEmpty || resolvedPeerKey.isNotEmpty) {
+          updates['participantPublicKeys'] = {
+            if (myPublicKey.isNotEmpty) currentUserId: myPublicKey,
+            if (resolvedPeerKey.isNotEmpty) recipientUserId: resolvedPeerKey,
+          };
+        }
+      } else {
+        if (myPublicKey.isNotEmpty && existingKeys[currentUserId] != myPublicKey) {
+          updates['participantPublicKeys.$currentUserId'] = myPublicKey;
+        }
+        if (resolvedPeerKey.isNotEmpty && existingKeys[recipientUserId] != resolvedPeerKey) {
+          updates['participantPublicKeys.$recipientUserId'] = resolvedPeerKey;
+        }
       }
+
       final existingNames = data['participantNames'] as Map<dynamic, dynamic>?;
       if (existingNames == null ||
           existingNames[currentUserId] == null ||

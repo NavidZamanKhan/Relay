@@ -227,6 +227,78 @@ void main() {
       );
     });
 
+    test('stale recipient key causes recipient decryption failure, reproducing encrypted message bug', () async {
+      // Bob V1 key
+      final bobV1PublicKey = bobPublicKey;
+
+      // Bob reinstalls on new device and generates Bob V2 key
+      final bobV2Storage = FakeSecureStorage();
+      final bobV2Crypto = CryptoService(storage: bobV2Storage);
+      final bobV2PublicKey = await bobV2Crypto.getOrCreatePublicKey();
+      expect(bobV2PublicKey, isNotEmpty);
+
+      // Alice mistakenly encrypts with stale Bob V1 key (reproducing the bug)
+      final aliceSecretWithV1 = await aliceCrypto.deriveSharedSecret(
+        peerPublicKeyBase64: bobV1PublicKey,
+      );
+      const testMsg = 'Testing stale key encryption';
+      final encryptedWithV1 = await aliceCrypto.encryptPayload(
+        plaintext: testMsg,
+        sharedSecretBytes: aliceSecretWithV1,
+      );
+
+      // Bob V2 receives message and attempts decryption with Alice's public key
+      final bobV2SecretWithAlice = await bobV2Crypto.deriveSharedSecret(
+        peerPublicKeyBase64: alicePublicKey,
+      );
+
+      // AES-GCM MAC validation fails because Alice used V1 secret while Bob V2 uses V2 secret
+      expect(
+        () => bobV2Crypto.decryptPayload(
+          ciphertextBase64: encryptedWithV1.ciphertext,
+          nonceBase64: encryptedWithV1.nonce,
+          sharedSecretBytes: bobV2SecretWithAlice,
+        ),
+        throwsA(isA<Exception>()),
+      );
+    });
+
+    test('canonical directory key recovery resolves active key and ensures flawless bidirectional decryption', () async {
+      // Bob reinstalled on new device with Bob V2 key
+      final bobV2Storage = FakeSecureStorage();
+      final bobV2Crypto = CryptoService(storage: bobV2Storage);
+      final bobV2PublicKey = await bobV2Crypto.getOrCreatePublicKey();
+
+      // Alice resolves canonical active key (Bob V2) instead of stale V1 key
+      final aliceSecretWithV2 = await aliceCrypto.deriveSharedSecret(
+        peerPublicKeyBase64: bobV2PublicKey,
+      );
+      const testMsg = 'Hello after key synchronization';
+      final encryptedWithV2 = await aliceCrypto.encryptPayload(
+        plaintext: testMsg,
+        sharedSecretBytes: aliceSecretWithV2,
+      );
+
+      // Bob V2 receives message and decrypts
+      final bobV2SecretWithAlice = await bobV2Crypto.deriveSharedSecret(
+        peerPublicKeyBase64: alicePublicKey,
+      );
+      final decryptedByBob = await bobV2Crypto.decryptPayload(
+        ciphertextBase64: encryptedWithV2.ciphertext,
+        nonceBase64: encryptedWithV2.nonce,
+        sharedSecretBytes: bobV2SecretWithAlice,
+      );
+      expect(decryptedByBob, equals(testMsg));
+
+      // Alice also decrypts her own sent message using Bob V2 active key
+      final decryptedByAlice = await aliceCrypto.decryptPayload(
+        ciphertextBase64: encryptedWithV2.ciphertext,
+        nonceBase64: encryptedWithV2.nonce,
+        sharedSecretBytes: aliceSecretWithV2,
+      );
+      expect(decryptedByAlice, equals(testMsg));
+    });
+
     test('verifies 4-stage message delivery lifecycle semantics', () {
       expect(DeliveryStage.fromString('sending'), equals(DeliveryStage.sending));
       expect(DeliveryStage.fromString('sent'), equals(DeliveryStage.sent));
