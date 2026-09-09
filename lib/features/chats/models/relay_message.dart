@@ -20,6 +20,7 @@ class RelayMessage extends Equatable {
     this.duration = Duration.zero,
     this.waveform,
     this.audioUrl,
+    this.audioData,
     this.isMine = false,
     this.delivery = DeliveryStage.read,
     this.replyTo,
@@ -38,6 +39,7 @@ class RelayMessage extends Equatable {
   final Duration duration;
   final List<double>? waveform;
   final String? audioUrl;
+  final String? audioData;
   final bool isMine;
   final DeliveryStage delivery;
   final String? replyTo;
@@ -56,6 +58,7 @@ class RelayMessage extends Equatable {
     Duration? duration,
     List<double>? waveform,
     String? audioUrl,
+    String? audioData,
     bool? isMine,
     DeliveryStage? delivery,
     String? replyTo,
@@ -74,6 +77,7 @@ class RelayMessage extends Equatable {
         duration: duration ?? this.duration,
         waveform: waveform ?? this.waveform,
         audioUrl: audioUrl ?? this.audioUrl,
+        audioData: audioData ?? this.audioData,
         isMine: isMine ?? this.isMine,
         delivery: delivery ?? this.delivery,
         replyTo: replyTo ?? this.replyTo,
@@ -98,6 +102,7 @@ class RelayMessage extends Equatable {
         'durationMs': duration.inMilliseconds,
       if (waveform != null && waveform!.isNotEmpty) 'waveform': waveform,
       if (audioUrl != null) 'audioUrl': audioUrl,
+      if (audioData != null) 'audioData': audioData,
       if (replyTo != null) 'replyTo': replyTo,
     };
   }
@@ -130,6 +135,7 @@ class RelayMessage extends Equatable {
         ?.map((e) => (e as num).toDouble())
         .toList(growable: false);
     final audioUrl = map['audioUrl'] as String?;
+    final audioData = map['audioData'] as String?;
 
     return RelayMessage(
       id: id,
@@ -145,6 +151,7 @@ class RelayMessage extends Equatable {
       duration: Duration(milliseconds: durationMs),
       waveform: waveform,
       audioUrl: audioUrl,
+      audioData: audioData,
       isMine: currentUserId != null ? (sender == currentUserId) : false,
       delivery: delivery,
       replyTo: map['replyTo'] as String?,
@@ -166,6 +173,7 @@ class RelayMessage extends Equatable {
         duration,
         waveform,
         audioUrl,
+        audioData,
         isMine,
         delivery,
         replyTo,

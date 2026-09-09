@@ -130,6 +130,28 @@ void main() {
       expect(deserialized.waveform, equals(testWaveform));
       expect(deserialized.isMine, isFalse);
     });
+
+    test('serializes and deserializes resilient inline audioData fallback cleanly', () {
+      final message = RelayMessage(
+        id: 'voice_msg_inline',
+        senderId: 'alice_uid',
+        recipientId: 'bob_uid',
+        sentAt: DateTime.utc(2026, 9, 10, 12, 0),
+        kind: MessageKind.voice,
+        audioData: 'BASE64_CIPHERTEXT_BYTES',
+        waveform: const [0.2, 0.5, 0.8],
+        duration: const Duration(seconds: 3),
+        delivery: DeliveryStage.sent,
+      );
+
+      final map = message.toMap();
+      expect(map['audioData'], equals('BASE64_CIPHERTEXT_BYTES'));
+
+      final deserialized = RelayMessage.fromMap(map, 'voice_msg_inline', currentUserId: 'alice_uid');
+      expect(deserialized.audioData, equals('BASE64_CIPHERTEXT_BYTES'));
+      expect(deserialized.audioUrl, isNull);
+      expect(deserialized.isMine, isTrue);
+    });
   });
 
   group('Binary Audio Payload E2EE Roundtrip', () {

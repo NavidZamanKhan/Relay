@@ -829,14 +829,25 @@ class FirestoreChatRepository implements IChatRepository {
       nonce = base64Encode(List<int>.filled(12, 0));
     }
 
-    // 3. Upload encrypted blob to Firebase Cloud Storage
-    final storagePath = 'chats/$effectiveChatId/voice/$messageId.enc';
-    final storageRef = _storage.ref(storagePath);
-    final uploadTask = await storageRef.putData(
-      Uint8List.fromList(ciphertextBytes),
-      SettableMetadata(contentType: 'application/octet-stream'),
-    );
-    final downloadUrl = await uploadTask.ref.getDownloadURL();
+    // 3. Upload encrypted blob to Firebase Cloud Storage (with resilient inline fallback)
+    String? downloadUrl;
+    String? audioData;
+    try {
+      final storagePath = 'chats/$effectiveChatId/voice/$messageId.enc';
+      final storageRef = _storage.ref(storagePath);
+      final uploadTask = await storageRef.putData(
+        Uint8List.fromList(ciphertextBytes),
+        SettableMetadata(contentType: 'application/octet-stream'),
+      );
+      downloadUrl = await uploadTask.ref.getDownloadURL();
+    } catch (_) {
+      // Graceful fallback to inline base64 if Cloud Storage bucket is not yet provisioned or offline
+      if (ciphertextBytes.length < 500 * 1024) {
+        audioData = base64Encode(ciphertextBytes);
+      } else {
+        rethrow;
+      }
+    }
 
     // 4. Cache local decrypted file so sender does not re-download
     try {
@@ -855,6 +866,7 @@ class FirestoreChatRepository implements IChatRepository {
       sentAt: DateTime.now(),
       kind: MessageKind.voice,
       audioUrl: downloadUrl,
+      audioData: audioData,
       waveform: waveform,
       duration: duration,
       nonce: nonce,
@@ -956,6 +968,7 @@ class FirestoreChatRepository implements IChatRepository {
     required String chatId,
     required String messageId,
     required String audioUrl,
+    String? audioData,
     required String peerPublicKey,
     required String nonce,
   }) async {
@@ -968,18 +981,30 @@ class FirestoreChatRepository implements IChatRepository {
     }
 
     // Check if audioUrl is already a local file path
-    if (File(audioUrl).existsSync()) {
+    if (audioUrl.isNotEmpty && File(audioUrl).existsSync()) {
       return audioUrl;
     }
 
-    // Download ciphertext bytes from Firebase Storage
+    // Download ciphertext bytes from Firebase Storage or decode inline audioData
     Uint8List? ciphertextBytes;
-    if (audioUrl.startsWith('gs://') || !audioUrl.startsWith('http')) {
-      final storageRef = _storage.ref(audioUrl);
-      ciphertextBytes = await storageRef.getData();
-    } else {
-      final storageRef = _storage.refFromURL(audioUrl);
-      ciphertextBytes = await storageRef.getData();
+    if (audioUrl.isNotEmpty) {
+      try {
+        if (audioUrl.startsWith('gs://') || !audioUrl.startsWith('http')) {
+          final storageRef = _storage.ref(audioUrl);
+          ciphertextBytes = await storageRef.getData();
+        } else {
+          final storageRef = _storage.refFromURL(audioUrl);
+          ciphertextBytes = await storageRef.getData();
+        }
+      } catch (_) {}
+    }
+
+    if ((ciphertextBytes == null || ciphertextBytes.isEmpty) &&
+        audioData != null &&
+        audioData.isNotEmpty) {
+      try {
+        ciphertextBytes = base64Decode(audioData);
+      } catch (_) {}
     }
 
     if (ciphertextBytes == null || ciphertextBytes.isEmpty) {

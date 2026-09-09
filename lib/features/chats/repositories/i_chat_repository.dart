@@ -77,6 +77,7 @@ abstract interface class IChatRepository {
     required String chatId,
     required String messageId,
     required String audioUrl,
+    String? audioData,
     required String peerPublicKey,
     required String nonce,
   });

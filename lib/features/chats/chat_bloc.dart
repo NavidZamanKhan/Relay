@@ -964,7 +964,8 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
       String? localPlayablePath;
       if (message.asset != null && File(message.asset!).existsSync()) {
         localPlayablePath = message.asset;
-      } else if (message.audioUrl != null && message.audioUrl!.isNotEmpty) {
+      } else if ((message.audioUrl != null && message.audioUrl!.isNotEmpty) ||
+          (message.audioData != null && message.audioData!.isNotEmpty)) {
         final repo = _chatRepository;
         if (repo != null) {
           final conv = state.conversations
@@ -975,7 +976,8 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
             localPlayablePath = await repo.getOrDownloadVoiceAudio(
               chatId: state.activeId,
               messageId: message.id,
-              audioUrl: message.audioUrl!,
+              audioUrl: message.audioUrl ?? '',
+              audioData: message.audioData,
               peerPublicKey: peerKey,
               nonce: message.nonce ?? '',
             );
@@ -1035,20 +1037,60 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
     final repo = _chatRepository;
     final userId = _currentUserId;
-    if (repo != null && userId != null && state.activeId.isNotEmpty) {
+    final id = state.activeId;
+    if (repo != null && userId != null && id.isNotEmpty) {
       final conv = state.conversations
-          .where((c) => c.id == state.activeId || c.recipientId == state.activeId)
+          .where((c) => c.id == id || c.recipientId == id)
           .firstOrNull;
+
+      final effectiveChatId = (id.startsWith('chat_') || id.startsWith('group_'))
+          ? id
+          : (conv != null && conv.id.startsWith('chat_')
+              ? conv.id
+              : Conversation.directChatId(userId, id));
+
+      final recipientId = conv?.recipientId ??
+          (effectiveChatId.startsWith('chat_')
+              ? effectiveChatId
+                  .replaceFirst('chat_', '')
+                  .split('_')
+                  .where((u) => u != userId)
+                  .firstOrNull
+              : null);
+
       final peerKey = conv?.recipientPublicKey ?? '';
+      final messageId = _id('msg');
+
+      final outgoing = RelayMessage(
+        id: messageId,
+        senderId: userId,
+        recipientId: recipientId,
+        sentAt: DateTime.now(),
+        kind: MessageKind.voice,
+        duration: duration,
+        waveform: waveform,
+        asset: localPath,
+        delivery: DeliveryStage.sending,
+        isMine: true,
+      );
+
+      _appendLocal(emit, effectiveChatId, outgoing);
+      if (id != effectiveChatId) {
+        _appendLocal(emit, id, outgoing);
+      }
 
       if (localPath != null) {
         repo.sendVoiceMessage(
-          chatId: state.activeId,
+          chatId: effectiveChatId,
           localFilePath: localPath,
           duration: duration,
           waveform: waveform ?? const [],
           recipientPublicKey: peerKey,
-        ).catchError((_) {});
+        ).then((_) {
+          if (!isClosed) {
+            add(ChatDeliveryAdvanced(effectiveChatId, messageId, DeliveryStage.sent));
+          }
+        }).catchError((_) {});
       }
     } else {
       _appendLocal(
