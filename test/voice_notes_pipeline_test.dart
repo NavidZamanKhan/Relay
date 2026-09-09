@@ -152,6 +152,26 @@ void main() {
       expect(deserialized.audioUrl, isNull);
       expect(deserialized.isMine, isTrue);
     });
+
+    test('serializes voice message preserving unified caller messageId', () {
+      final message = RelayMessage(
+        id: 'msg_client_unified_12345',
+        senderId: 'alice_uid',
+        recipientId: 'bob_uid',
+        sentAt: DateTime.utc(2026, 9, 10, 12, 0),
+        kind: MessageKind.voice,
+        audioData: 'BASE64_BYTES',
+        waveform: const [0.3, 0.6],
+        duration: const Duration(seconds: 4),
+        delivery: DeliveryStage.sent,
+      );
+
+      final map = message.toMap();
+      final restored = RelayMessage.fromMap(map, 'msg_client_unified_12345', currentUserId: 'alice_uid');
+      expect(restored.id, equals('msg_client_unified_12345'));
+      expect(restored.kind, equals(MessageKind.voice));
+      expect(restored.delivery, equals(DeliveryStage.sent));
+    });
   });
 
   group('Binary Audio Payload E2EE Roundtrip', () {

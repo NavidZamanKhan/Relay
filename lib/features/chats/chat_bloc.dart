@@ -49,6 +49,14 @@ final class _ChatMessagesUpdated extends ChatEvent {
   List<Object?> get props => [chatId, messages];
 }
 
+final class _ChatVoiceSendFailed extends ChatEvent {
+  const _ChatVoiceSendFailed(this.chatId, this.messageId);
+  final String chatId;
+  final String messageId;
+  @override
+  List<Object?> get props => [chatId, messageId];
+}
+
 final class ChatDirectConversationStarted extends ChatEvent {
   const ChatDirectConversationStarted({
     required this.recipientUserId,
@@ -411,10 +419,12 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
     on<_ChatMessagesUpdated>((e, emit) {
       final currentMessages = state.threads[e.chatId] ?? const [];
+      final now = DateTime.now();
       final pendingSending = currentMessages.where(
         (m) =>
             m.delivery == DeliveryStage.sending &&
-            !e.messages.any((rm) => rm.id == m.id),
+            !e.messages.any((rm) => rm.id == m.id) &&
+            now.difference(m.sentAt).inSeconds < 30,
       );
       final merged = [...e.messages, ...pendingSending];
       emit(
@@ -656,11 +666,24 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
                 ]
               : state.conversations,
           threads: {
-            ...state.threads,
-            e.chatId: [
-              for (final m in thread)
-                m.id == e.messageId ? m.copyWith(delivery: e.stage) : m,
-            ],
+            for (final entry in state.threads.entries)
+              entry.key: [
+                for (final m in entry.value)
+                  m.id == e.messageId ? m.copyWith(delivery: e.stage) : m,
+              ],
+          },
+        ),
+      );
+    });
+    on<_ChatVoiceSendFailed>((e, emit) {
+      emit(
+        state.copyWith(
+          threads: {
+            for (final entry in state.threads.entries)
+              entry.key: [
+                for (final m in entry.value)
+                  if (m.id != e.messageId) m,
+              ],
           },
         ),
       );
@@ -1092,6 +1115,7 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
       if (localPath != null) {
         repo.sendVoiceMessage(
           chatId: effectiveChatId,
+          messageId: messageId,
           localFilePath: localPath,
           duration: duration,
           waveform: waveform ?? const [],
@@ -1099,8 +1123,18 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
         ).then((_) {
           if (!isClosed) {
             add(ChatDeliveryAdvanced(effectiveChatId, messageId, DeliveryStage.sent));
+            if (id != effectiveChatId) {
+              add(ChatDeliveryAdvanced(id, messageId, DeliveryStage.sent));
+            }
           }
-        }).catchError((_) {});
+        }).catchError((_) {
+          if (!isClosed) {
+            add(_ChatVoiceSendFailed(effectiveChatId, messageId));
+            if (id != effectiveChatId) {
+              add(_ChatVoiceSendFailed(id, messageId));
+            }
+          }
+        });
       }
     } else {
       _appendLocal(

@@ -83,6 +83,7 @@ class MockChatRepository implements IChatRepository {
     required Duration duration,
     required List<double> waveform,
     required String recipientPublicKey,
+    String? messageId,
     String? replyTo,
   }) async {}
 

@@ -764,6 +764,7 @@ class FirestoreChatRepository implements IChatRepository {
     required Duration duration,
     required List<double> waveform,
     required String recipientPublicKey,
+    String? messageId,
     String? replyTo,
   }) async {
     final user = _auth.currentUser;
@@ -804,7 +805,9 @@ class FirestoreChatRepository implements IChatRepository {
       effectivePublicKey = recipientPublicKey.trim();
     }
 
-    final messageId = 'msg_${DateTime.now().millisecondsSinceEpoch}_${user.uid.substring(0, math.min(6, user.uid.length))}';
+    final effectiveMessageId = (messageId != null && messageId.isNotEmpty)
+        ? messageId
+        : 'msg_${DateTime.now().millisecondsSinceEpoch}_${user.uid.substring(0, math.min(6, user.uid.length))}';
 
     // 1. Read local audio bytes
     final audioFile = File(localFilePath);
@@ -833,7 +836,7 @@ class FirestoreChatRepository implements IChatRepository {
     String? downloadUrl;
     String? audioData;
     try {
-      final storagePath = 'chats/$effectiveChatId/voice/$messageId.enc';
+      final storagePath = 'chats/$effectiveChatId/voice/$effectiveMessageId.enc';
       final storageRef = _storage.ref(storagePath);
       final uploadTask = await storageRef.putData(
         Uint8List.fromList(ciphertextBytes),
@@ -852,7 +855,7 @@ class FirestoreChatRepository implements IChatRepository {
     // 4. Cache local decrypted file so sender does not re-download
     try {
       final cacheDir = await getTemporaryDirectory();
-      final localCacheFile = File('${cacheDir.path}/voice_$messageId.m4a');
+      final localCacheFile = File('${cacheDir.path}/voice_$effectiveMessageId.m4a');
       if (localFilePath != localCacheFile.path) {
         await audioFile.copy(localCacheFile.path);
       }
@@ -860,7 +863,7 @@ class FirestoreChatRepository implements IChatRepository {
 
     // 5. Construct RelayMessage and batch write to Firestore
     final message = RelayMessage(
-      id: messageId,
+      id: effectiveMessageId,
       senderId: user.uid,
       recipientId: effectiveRecipientId,
       sentAt: DateTime.now(),
@@ -876,7 +879,7 @@ class FirestoreChatRepository implements IChatRepository {
     );
 
     final chatRef = _chatsCollection.doc(effectiveChatId);
-    final messageRef = chatRef.collection('messages').doc(messageId);
+    final messageRef = chatRef.collection('messages').doc(effectiveMessageId);
     final chatDoc = await chatRef.get();
     final batch = _firestore.batch();
 
