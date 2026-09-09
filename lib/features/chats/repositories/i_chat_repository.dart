@@ -59,4 +59,25 @@ abstract interface class IChatRepository {
 
   /// Searches registered users by name or phone query.
   Future<List<RelayContact>> searchUsers(String query);
+
+  /// Uploads an end-to-end encrypted push-to-talk voice note to Cloud Storage
+  /// and writes the message document with 32-bar waveform metadata.
+  Future<void> sendVoiceMessage({
+    required String chatId,
+    required String localFilePath,
+    required Duration duration,
+    required List<double> waveform,
+    required String recipientPublicKey,
+    String? replyTo,
+  });
+
+  /// Resolves the local playback file for a voice message, downloading
+  /// and decrypting the Cloud Storage ciphertext if not already cached.
+  Future<String> getOrDownloadVoiceAudio({
+    required String chatId,
+    required String messageId,
+    required String audioUrl,
+    required String peerPublicKey,
+    required String nonce,
+  });
 }

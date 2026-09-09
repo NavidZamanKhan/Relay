@@ -156,6 +156,50 @@ class CryptoService {
     return utf8.decode(decryptedBytes);
   }
 
+  /// Encrypts raw binary bytes (audio/image) using AES-GCM 256-bit with the derived shared secret.
+  Future<({List<int> ciphertext, String nonce})> encryptRawBytes({
+    required List<int> rawBytes,
+    required List<int> sharedSecretBytes,
+  }) async {
+    final secretKey = SecretKey(sharedSecretBytes);
+    final secretBox = await _cipher.encrypt(
+      rawBytes,
+      secretKey: secretKey,
+    );
+    final combinedCiphertext = secretBox.cipherText + secretBox.mac.bytes;
+    return (
+      ciphertext: combinedCiphertext,
+      nonce: base64Encode(secretBox.nonce),
+    );
+  }
+
+  /// Decrypts AES-GCM ciphertext bytes using the derived shared secret and nonce.
+  Future<List<int>> decryptRawBytes({
+    required List<int> combinedBytes,
+    required String nonceBase64,
+    required List<int> sharedSecretBytes,
+  }) async {
+    final secretKey = SecretKey(sharedSecretBytes);
+    final nonceBytes = base64Decode(nonceBase64);
+
+    if (combinedBytes.length < 16) {
+      throw ArgumentError('Ciphertext too short for MAC verification.');
+    }
+    final cipherText = combinedBytes.sublist(0, combinedBytes.length - 16);
+    final macBytes = combinedBytes.sublist(combinedBytes.length - 16);
+
+    final secretBox = SecretBox(
+      cipherText,
+      nonce: nonceBytes,
+      mac: Mac(macBytes),
+    );
+
+    return await _cipher.decrypt(
+      secretBox,
+      secretKey: secretKey,
+    );
+  }
+
   /// Clears stored cryptographic keys on sign-out or account wipe.
   Future<void> clearKeys() async {
     await _storage.delete(key: _publicKeyKey);

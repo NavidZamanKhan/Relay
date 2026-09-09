@@ -300,14 +300,15 @@ class _VoiceMessage extends StatelessWidget {
                                 const Duration(milliseconds: 80),
                               ),
                               curve: Curves.linear,
-                              builder: (_, visualProgress, _) => CustomPaint(
-                                painter: WaveformPainter(
-                                  progress: visualProgress,
-                                  active: RelayColors.coralDeep,
-                                  inactive: foreground.withValues(alpha: .27),
-                                  seed: message.id.hashCode,
+                              builder: (context, visualProgress, _) => CustomPaint(
+                                  painter: WaveformPainter(
+                                    progress: visualProgress,
+                                    active: RelayColors.coralDeep,
+                                    inactive: foreground.withValues(alpha: .27),
+                                    seed: message.id.hashCode,
+                                    waveform: message.waveform,
+                                  ),
                                 ),
-                              ),
                             ),
                           ),
                         ),
@@ -418,25 +419,37 @@ class WaveformPainter extends CustomPainter {
     required this.active,
     required this.inactive,
     required this.seed,
+    this.waveform,
   });
 
   final double progress;
   final Color active;
   final Color inactive;
   final int seed;
+  final List<double>? waveform;
 
   @override
   void paint(Canvas canvas, Size size) {
     const bars = 32;
     final gap = size.width / bars;
     final activeUntil = (bars * progress).round();
+    final hasRealWaveform = waveform != null && waveform!.isNotEmpty;
+
     for (var i = 0; i < bars; i++) {
-      final wave =
-          .24 +
-          .72 *
-              ((math.sin((i + seed) * .79).abs() * .55) +
-                  (math.sin((i + 2) * .31).abs() * .45));
-      final height = size.height * wave.clamp(.22, .96).toDouble();
+      double wave;
+      if (hasRealWaveform) {
+        if (i < waveform!.length) {
+          wave = waveform![i];
+        } else {
+          wave = 0.25;
+        }
+      } else {
+        wave = .24 +
+            .72 *
+                ((math.sin((i + seed) * .79).abs() * .55) +
+                    (math.sin((i + 2) * .31).abs() * .45));
+      }
+      final height = size.height * wave.clamp(.18, .96).toDouble();
       final paint = Paint()
         ..color = i < activeUntil ? active : inactive
         ..strokeWidth = 2.4
@@ -455,7 +468,8 @@ class WaveformPainter extends CustomPainter {
       oldDelegate.progress != progress ||
       oldDelegate.active != active ||
       oldDelegate.inactive != inactive ||
-      oldDelegate.seed != seed;
+      oldDelegate.seed != seed ||
+      oldDelegate.waveform != waveform;
 }
 
 class _ImagePreview extends StatelessWidget {

@@ -18,6 +18,8 @@ class RelayMessage extends Equatable {
     this.ephemeralPublicKey,
     this.asset,
     this.duration = Duration.zero,
+    this.waveform,
+    this.audioUrl,
     this.isMine = false,
     this.delivery = DeliveryStage.read,
     this.replyTo,
@@ -34,6 +36,8 @@ class RelayMessage extends Equatable {
   final String? ephemeralPublicKey;
   final String? asset;
   final Duration duration;
+  final List<double>? waveform;
+  final String? audioUrl;
   final bool isMine;
   final DeliveryStage delivery;
   final String? replyTo;
@@ -50,6 +54,8 @@ class RelayMessage extends Equatable {
     String? ephemeralPublicKey,
     String? asset,
     Duration? duration,
+    List<double>? waveform,
+    String? audioUrl,
     bool? isMine,
     DeliveryStage? delivery,
     String? replyTo,
@@ -66,6 +72,8 @@ class RelayMessage extends Equatable {
         ephemeralPublicKey: ephemeralPublicKey ?? this.ephemeralPublicKey,
         asset: asset ?? this.asset,
         duration: duration ?? this.duration,
+        waveform: waveform ?? this.waveform,
+        audioUrl: audioUrl ?? this.audioUrl,
         isMine: isMine ?? this.isMine,
         delivery: delivery ?? this.delivery,
         replyTo: replyTo ?? this.replyTo,
@@ -88,6 +96,8 @@ class RelayMessage extends Equatable {
       if (asset != null) 'asset': asset,
       if (duration != Duration.zero)
         'durationMs': duration.inMilliseconds,
+      if (waveform != null && waveform!.isNotEmpty) 'waveform': waveform,
+      if (audioUrl != null) 'audioUrl': audioUrl,
       if (replyTo != null) 'replyTo': replyTo,
     };
   }
@@ -115,6 +125,11 @@ class RelayMessage extends Equatable {
     final kind = MessageKind.fromString(map['kind'] as String?);
     final delivery = DeliveryStage.fromString(map['delivery'] as String?);
     final durationMs = (map['durationMs'] as num?)?.toInt() ?? 0;
+    final rawWaveform = map['waveform'] as List<dynamic>?;
+    final waveform = rawWaveform
+        ?.map((e) => (e as num).toDouble())
+        .toList(growable: false);
+    final audioUrl = map['audioUrl'] as String?;
 
     return RelayMessage(
       id: id,
@@ -128,6 +143,8 @@ class RelayMessage extends Equatable {
       ephemeralPublicKey: map['ephemeralPublicKey'] as String?,
       asset: map['asset'] as String?,
       duration: Duration(milliseconds: durationMs),
+      waveform: waveform,
+      audioUrl: audioUrl,
       isMine: currentUserId != null ? (sender == currentUserId) : false,
       delivery: delivery,
       replyTo: map['replyTo'] as String?,
@@ -147,6 +164,8 @@ class RelayMessage extends Equatable {
         ephemeralPublicKey,
         asset,
         duration,
+        waveform,
+        audioUrl,
         isMine,
         delivery,
         replyTo,

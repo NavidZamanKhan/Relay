@@ -1,11 +1,17 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
+import 'dart:math' as math;
+import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../../../core/crypto/crypto_service.dart';
 import '../models/conversation.dart';
 import '../models/delivery_stage.dart';
+import '../models/message_kind.dart';
 import '../models/relay_contact.dart';
 import '../models/relay_message.dart';
 import 'i_chat_repository.dart';
@@ -16,18 +22,22 @@ class FirestoreChatRepository implements IChatRepository {
   FirestoreChatRepository({
     FirebaseFirestore? firestore,
     FirebaseAuth? auth,
+    FirebaseStorage? storage,
     CryptoService? cryptoService,
   })  : _customFirestore = firestore,
         _customAuth = auth,
+        _customStorage = storage,
         _cryptoService = cryptoService ?? CryptoService();
 
   final FirebaseFirestore? _customFirestore;
   final FirebaseAuth? _customAuth;
+  final FirebaseStorage? _customStorage;
   final CryptoService _cryptoService;
 
   FirebaseFirestore get _firestore =>
       _customFirestore ?? FirebaseFirestore.instance;
   FirebaseAuth get _auth => _customAuth ?? FirebaseAuth.instance;
+  FirebaseStorage get _storage => _customStorage ?? FirebaseStorage.instance;
 
   final Map<String, List<int>> _sharedSecretCache = {};
   final Map<String, String> _userDisplayNameCache = {};
@@ -745,5 +755,252 @@ class FirestoreChatRepository implements IChatRepository {
     }
 
     return results;
+  }
+
+  @override
+  Future<void> sendVoiceMessage({
+    required String chatId,
+    required String localFilePath,
+    required Duration duration,
+    required List<double> waveform,
+    required String recipientPublicKey,
+    String? replyTo,
+  }) async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw StateError('Cannot send voice note: Unauthenticated session.');
+    }
+
+    // Normalize chatId
+    String effectiveChatId = chatId;
+    if (!effectiveChatId.startsWith('chat_') && !effectiveChatId.startsWith('group_')) {
+      final sorted = [user.uid, effectiveChatId]..sort();
+      effectiveChatId = 'chat_${sorted[0]}_${sorted[1]}';
+    }
+
+    // Resolve recipient ID
+    String? effectiveRecipientId;
+    if (effectiveChatId.startsWith('chat_')) {
+      final parts = effectiveChatId.replaceFirst('chat_', '').split('_');
+      effectiveRecipientId = parts.where((p) => p != user.uid).firstOrNull;
+    }
+
+    // Resolve recipient public key
+    String effectivePublicKey = '';
+    if (effectiveRecipientId != null) {
+      try {
+        final peerDoc = await _usersCollection.doc(effectiveRecipientId).get();
+        final pub = (peerDoc.data()?['publicKey'] as String?)?.trim();
+        if (pub != null && pub.isNotEmpty) {
+          _userPublicKeyCache[effectiveRecipientId] = pub;
+          effectivePublicKey = pub;
+        }
+      } catch (_) {
+        effectivePublicKey = _userPublicKeyCache[effectiveRecipientId] ?? '';
+      }
+    }
+
+    if (effectivePublicKey.isEmpty) {
+      effectivePublicKey = recipientPublicKey.trim();
+    }
+
+    final messageId = 'msg_${DateTime.now().millisecondsSinceEpoch}_${user.uid.substring(0, math.min(6, user.uid.length))}';
+
+    // 1. Read local audio bytes
+    final audioFile = File(localFilePath);
+    if (!await audioFile.exists()) {
+      throw StateError('Local voice note file not found: $localFilePath');
+    }
+    final rawBytes = await audioFile.readAsBytes();
+
+    // 2. Encrypt audio bytes with AES-256-GCM using peer shared secret
+    String nonce;
+    List<int> ciphertextBytes;
+    if (effectivePublicKey.isNotEmpty) {
+      final secret = await _getOrDeriveSecret(effectivePublicKey);
+      final encrypted = await _cryptoService.encryptRawBytes(
+        rawBytes: rawBytes,
+        sharedSecretBytes: secret,
+      );
+      ciphertextBytes = encrypted.ciphertext;
+      nonce = encrypted.nonce;
+    } else {
+      ciphertextBytes = rawBytes;
+      nonce = base64Encode(List<int>.filled(12, 0));
+    }
+
+    // 3. Upload encrypted blob to Firebase Cloud Storage
+    final storagePath = 'chats/$effectiveChatId/voice/$messageId.enc';
+    final storageRef = _storage.ref(storagePath);
+    final uploadTask = await storageRef.putData(
+      Uint8List.fromList(ciphertextBytes),
+      SettableMetadata(contentType: 'application/octet-stream'),
+    );
+    final downloadUrl = await uploadTask.ref.getDownloadURL();
+
+    // 4. Cache local decrypted file so sender does not re-download
+    try {
+      final cacheDir = await getTemporaryDirectory();
+      final localCacheFile = File('${cacheDir.path}/voice_$messageId.m4a');
+      if (localFilePath != localCacheFile.path) {
+        await audioFile.copy(localCacheFile.path);
+      }
+    } catch (_) {}
+
+    // 5. Construct RelayMessage and batch write to Firestore
+    final message = RelayMessage(
+      id: messageId,
+      senderId: user.uid,
+      recipientId: effectiveRecipientId,
+      sentAt: DateTime.now(),
+      kind: MessageKind.voice,
+      audioUrl: downloadUrl,
+      waveform: waveform,
+      duration: duration,
+      nonce: nonce,
+      delivery: DeliveryStage.sent,
+      replyTo: replyTo,
+    );
+
+    final chatRef = _chatsCollection.doc(effectiveChatId);
+    final messageRef = chatRef.collection('messages').doc(messageId);
+    final chatDoc = await chatRef.get();
+    final batch = _firestore.batch();
+
+    String currentUserName = 'Me';
+    try {
+      if (_userDisplayNameCache.containsKey(user.uid)) {
+        currentUserName = _userDisplayNameCache[user.uid]!;
+      } else {
+        final myDoc = await _usersCollection.doc(user.uid).get();
+        currentUserName = (myDoc.data()?['displayName'] as String?)?.trim() ?? 'Me';
+        _userDisplayNameCache[user.uid] = currentUserName;
+      }
+    } catch (_) {}
+
+    String peerName = 'Relay Contact';
+    if (effectiveRecipientId != null) {
+      if (_userDisplayNameCache.containsKey(effectiveRecipientId)) {
+        peerName = _userDisplayNameCache[effectiveRecipientId]!;
+      } else {
+        try {
+          final pDoc = await _usersCollection.doc(effectiveRecipientId).get();
+          peerName = (pDoc.data()?['displayName'] as String?)?.trim() ?? 'Relay Contact';
+          _userDisplayNameCache[effectiveRecipientId] = peerName;
+        } catch (_) {}
+      }
+    }
+
+    final participantNames = {
+      user.uid: currentUserName,
+      ?effectiveRecipientId: peerName,
+    };
+
+    final durationSeconds = duration.inSeconds;
+    final durationMinutes = duration.inMinutes;
+    final secondsRem = durationSeconds % 60;
+    final timeStr = '$durationMinutes:${secondsRem.toString().padLeft(2, '0')}';
+    final voiceSnippet = 'Voice message · $timeStr';
+
+    if (!chatDoc.exists) {
+      String myPublicKey = '';
+      try {
+        myPublicKey = await _cryptoService.getOrCreatePublicKey();
+      } catch (_) {}
+
+      final newConvData = <String, dynamic>{
+        'participantIds': [user.uid, effectiveRecipientId ?? ''],
+        'participantNames': participantNames,
+        'name': peerName,
+        'lastMessage': voiceSnippet,
+        'lastMessageTime': FieldValue.serverTimestamp(),
+        'previewKind': 'voice',
+        'unreadCount': {
+          user.uid: 0,
+          ?effectiveRecipientId: 1,
+        },
+        'delivery': 'sent',
+        'isGroup': false,
+        'pinned': false,
+        'muted': false,
+        if (effectivePublicKey.isNotEmpty || myPublicKey.isNotEmpty)
+          'participantPublicKeys': {
+            user.uid: myPublicKey,
+            if (effectiveRecipientId != null && effectivePublicKey.isNotEmpty)
+              effectiveRecipientId: effectivePublicKey,
+          },
+      };
+      batch.set(chatRef, newConvData);
+    } else {
+      final updateData = <String, dynamic>{
+        'lastMessage': voiceSnippet,
+        'lastMessageTime': FieldValue.serverTimestamp(),
+        'previewKind': 'voice',
+        'delivery': 'sent',
+      };
+      if (effectiveRecipientId != null) {
+        updateData['unreadCount.$effectiveRecipientId'] = FieldValue.increment(1);
+      }
+      if (effectiveRecipientId != null && effectivePublicKey.isNotEmpty) {
+        updateData['participantPublicKeys.$effectiveRecipientId'] = effectivePublicKey;
+      }
+      batch.update(chatRef, updateData);
+    }
+
+    batch.set(messageRef, message.toMap(useServerTimestamp: true));
+    await batch.commit();
+  }
+
+  @override
+  Future<String> getOrDownloadVoiceAudio({
+    required String chatId,
+    required String messageId,
+    required String audioUrl,
+    required String peerPublicKey,
+    required String nonce,
+  }) async {
+    final cacheDir = await getTemporaryDirectory();
+    final localCacheFile = File('${cacheDir.path}/voice_$messageId.m4a');
+
+    // Return cached decrypted audio if present and valid
+    if (await localCacheFile.exists() && await localCacheFile.length() > 0) {
+      return localCacheFile.path;
+    }
+
+    // Check if audioUrl is already a local file path
+    if (File(audioUrl).existsSync()) {
+      return audioUrl;
+    }
+
+    // Download ciphertext bytes from Firebase Storage
+    Uint8List? ciphertextBytes;
+    if (audioUrl.startsWith('gs://') || !audioUrl.startsWith('http')) {
+      final storageRef = _storage.ref(audioUrl);
+      ciphertextBytes = await storageRef.getData();
+    } else {
+      final storageRef = _storage.refFromURL(audioUrl);
+      ciphertextBytes = await storageRef.getData();
+    }
+
+    if (ciphertextBytes == null || ciphertextBytes.isEmpty) {
+      throw StateError('Voice audio payload empty or not found in storage');
+    }
+
+    // Decrypt audio bytes using peer shared secret
+    List<int> decryptedBytes;
+    if (peerPublicKey.isNotEmpty && nonce.isNotEmpty) {
+      final secret = await _getOrDeriveSecret(peerPublicKey);
+      decryptedBytes = await _cryptoService.decryptRawBytes(
+        combinedBytes: ciphertextBytes,
+        nonceBase64: nonce,
+        sharedSecretBytes: secret,
+      );
+    } else {
+      decryptedBytes = ciphertextBytes;
+    }
+
+    // Save decrypted AAC to local cache
+    await localCacheFile.writeAsBytes(decryptedBytes, flush: true);
+    return localCacheFile.path;
   }
 }

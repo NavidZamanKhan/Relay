@@ -1,8 +1,11 @@
 import 'dart:async';
+import 'dart:io';
 
+import 'package:audioplayers/audioplayers.dart';
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../core/services/audio_service.dart';
 import 'chat_models.dart';
 import 'demo_data.dart';
 import 'repositories/i_chat_repository.dart';
@@ -11,6 +14,17 @@ sealed class ChatEvent extends Equatable {
   const ChatEvent();
   @override
   List<Object?> get props => [];
+}
+
+final class _ChatAudioPlaybackTicked extends ChatEvent {
+  const _ChatAudioPlaybackTicked({
+    required this.progress,
+    required this.isCompleted,
+  });
+  final double progress;
+  final bool isCompleted;
+  @override
+  List<Object?> get props => [progress, isCompleted];
 }
 
 final class ChatStreamStarted extends ChatEvent {
@@ -303,9 +317,15 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
     IChatRepository? chatRepository,
     String? currentUserId,
     bool? demoMode,
+    IAudioService? audioService,
   })  : _chatRepository = chatRepository,
         _currentUserId = currentUserId,
         _demoMode = demoMode ?? (chatRepository == null),
+        _audioService = audioService ??
+            (((demoMode ?? (chatRepository == null)) ||
+                    Platform.environment.containsKey('FLUTTER_TEST'))
+                ? NoOpAudioService()
+                : RelayAudioService()),
         super(
           ChatState(
             conversations:
@@ -319,6 +339,33 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
             activeId: (demoMode ?? (chatRepository == null)) ? 'aisha' : '',
           ),
         ) {
+    _audioPositionSubscription = _audioService.positionStream.listen((pos) {
+      if (state.playingMessageId != null) {
+        final msg = state.messages
+            .where((m) => m.id == state.playingMessageId)
+            .firstOrNull;
+        if (msg != null && msg.duration.inMilliseconds > 0) {
+          final p = (pos.inMilliseconds / msg.duration.inMilliseconds).clamp(0.0, 1.0);
+          add(_ChatAudioPlaybackTicked(progress: p, isCompleted: p >= 1.0));
+        }
+      }
+    });
+
+    _audioStateSubscription = _audioService.playerStateStream.listen((ps) {
+      if (ps == PlayerState.completed) {
+        add(const _ChatAudioPlaybackTicked(progress: 1.0, isCompleted: true));
+      }
+    });
+
+    on<_ChatAudioPlaybackTicked>((e, emit) {
+      if (e.isCompleted) {
+        _voiceTimer?.cancel();
+        emit(state.copyWith(voiceProgress: 1.0, voicePaused: true));
+      } else {
+        emit(state.copyWith(voiceProgress: e.progress));
+      }
+    });
+
     on<ChatStreamStarted>((e, emit) async {
       _currentUserId = e.userId;
       await _conversationsSubscription?.cancel();
@@ -623,8 +670,18 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
       emit(state.copyWith(typingIds: {...state.typingIds}..remove(e.chatId)));
     });
     on<ChatVoiceToggled>(_togglePlayback);
-    on<ChatVoiceSeeked>((e, emit) {
-      if (state.playingMessageId != e.id) _voiceTimer?.cancel();
+    on<ChatVoiceSeeked>((e, emit) async {
+      if (state.playingMessageId != e.id) {
+        _voiceTimer?.cancel();
+        await _audioService.stop();
+      }
+      final message = state.messages
+          .where((m) => m.id == e.id)
+          .firstOrNull;
+      if (message != null && message.duration.inMilliseconds > 0) {
+        final targetMs = (message.duration.inMilliseconds * e.progress).round();
+        await _audioService.seek(Duration(milliseconds: targetMs));
+      }
       emit(
         state.copyWith(
           playingMessageId: e.id,
@@ -655,21 +712,20 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
         emit(state.copyWith(voiceProgress: next));
       }
     });
-    on<ChatVoiceSpeedChanged>(
-      (e, emit) => emit(
-        state.copyWith(
-          voiceSpeed: switch (state.voiceSpeed) {
-            1 => 1.5,
-            1.5 => 2,
-            _ => 1,
-          },
-        ),
-      ),
-    );
-    on<ChatRecordingStarted>((e, emit) {
+    on<ChatVoiceSpeedChanged>((e, emit) async {
+      final nextSpeed = switch (state.voiceSpeed) {
+        1.0 => 1.5,
+        1.5 => 2.0,
+        _ => 1.0,
+      };
+      await _audioService.setPlaybackRate(nextSpeed);
+      emit(state.copyWith(voiceSpeed: nextSpeed));
+    });
+    on<ChatRecordingStarted>((e, emit) async {
       if (state.isRecording) return;
       _voiceTimer?.cancel();
       _recordingTimer?.cancel();
+      await _audioService.stop();
       emit(
         state.copyWith(
           isRecording: true,
@@ -679,6 +735,9 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
           voicePaused: true,
         ),
       );
+      try {
+        await _audioService.startRecording();
+      } catch (_) {}
       _recordingTimer = Timer.periodic(const Duration(seconds: 1), (_) {
         if (!isClosed) add(const ChatRecordingTicked());
       });
@@ -701,18 +760,18 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
         emit(state.copyWith(recordingLocked: true, cancelProgress: 0));
       }
     });
-    on<ChatRecordingReleased>((e, emit) {
+    on<ChatRecordingReleased>((e, emit) async {
       if (!state.isRecording || state.recordingLocked) return;
       if (state.cancelProgress >= .95) {
-        _cancelRecording(emit);
+        await _cancelRecording(emit);
       } else {
-        _finishRecording(emit);
+        await _finishRecording(emit);
       }
     });
-    on<ChatRecordingSent>((e, emit) {
-      if (state.isRecording) _finishRecording(emit);
+    on<ChatRecordingSent>((e, emit) async {
+      if (state.isRecording) await _finishRecording(emit);
     });
-    on<ChatRecordingCancelled>((e, emit) => _cancelRecording(emit));
+    on<ChatRecordingCancelled>((e, emit) async => _cancelRecording(emit));
     on<ChatHistoryCleared>((e, emit) {
       _replyTimers.remove(state.activeId)?.cancel();
       _voiceTimer?.cancel();
@@ -769,10 +828,15 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
   int _sequence = 0;
 
   void _appendLocal(Emitter<ChatState> emit, String chatId, RelayMessage message) {
+    final durationSeconds = message.duration.inSeconds;
+    final durationMinutes = message.duration.inMinutes;
+    final secondsRem = durationSeconds % 60;
+    final timeStr = '$durationMinutes:${secondsRem.toString().padLeft(2, '0')}';
+
     final preview = switch (message.kind) {
       MessageKind.text => message.text ?? '',
       MessageKind.image => 'Photo',
-      MessageKind.voice => 'Voice message',
+      MessageKind.voice => 'Voice message · $timeStr',
       MessageKind.document => message.text ?? 'Document',
     };
     emit(
@@ -802,6 +866,8 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
     String? text,
     String? asset,
     Duration duration = Duration.zero,
+    List<double>? waveform,
+    String? audioUrl,
   }) => RelayMessage(
     id: _id('local'),
     senderId: 'me',
@@ -810,6 +876,8 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
     text: text,
     asset: asset,
     duration: duration,
+    waveform: waveform,
+    audioUrl: audioUrl,
     isMine: true,
     delivery: DeliveryStage.sending,
   );
@@ -859,14 +927,29 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
     }
   }
 
-  void _togglePlayback(ChatVoiceToggled e, Emitter<ChatState> emit) {
+  Future<void> _togglePlayback(ChatVoiceToggled e, Emitter<ChatState> emit) async {
     if (state.isRecording) return;
     _voiceTimer?.cancel();
     final same = state.playingMessageId == e.messageId;
     if (same && !state.voicePaused) {
+      await _audioService.pause();
       emit(state.copyWith(voicePaused: true));
       return;
     }
+    if (same && state.voicePaused) {
+      await _audioService.resume();
+      emit(state.copyWith(voicePaused: false));
+      _playbackClock.start();
+      _voiceTimer = Timer.periodic(const Duration(milliseconds: 80), (_) {
+        if (!isClosed) add(const ChatVoiceTicked());
+      });
+      return;
+    }
+
+    final message = state.messages
+        .where((m) => m.id == e.messageId)
+        .firstOrNull;
+
     emit(
       state.copyWith(
         playingMessageId: e.messageId,
@@ -876,6 +959,38 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
             : 0,
       ),
     );
+
+    if (message != null) {
+      String? localPlayablePath;
+      if (message.asset != null && File(message.asset!).existsSync()) {
+        localPlayablePath = message.asset;
+      } else if (message.audioUrl != null && message.audioUrl!.isNotEmpty) {
+        final repo = _chatRepository;
+        if (repo != null) {
+          final conv = state.conversations
+              .where((c) => c.id == state.activeId || c.recipientId == state.activeId)
+              .firstOrNull;
+          final peerKey = conv?.recipientPublicKey ?? '';
+          try {
+            localPlayablePath = await repo.getOrDownloadVoiceAudio(
+              chatId: state.activeId,
+              messageId: message.id,
+              audioUrl: message.audioUrl!,
+              peerPublicKey: peerKey,
+              nonce: message.nonce ?? '',
+            );
+          } catch (_) {}
+        }
+      }
+
+      if (localPlayablePath != null) {
+        await _audioService.play(localPlayablePath);
+        await _audioService.setPlaybackRate(state.voiceSpeed);
+        return;
+      }
+    }
+
+    // Fallback simulation timer for demo mode and mock messages
     _playbackClock
       ..reset()
       ..start();
@@ -884,8 +999,9 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
     });
   }
 
-  void _cancelRecording(Emitter<ChatState> emit) {
+  Future<void> _cancelRecording(Emitter<ChatState> emit) async {
     _recordingTimer?.cancel();
+    await _audioService.cancelRecording().catchError((_) {});
     emit(
       state.copyWith(
         isRecording: false,
@@ -896,16 +1012,56 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
     );
   }
 
-  void _finishRecording(Emitter<ChatState> emit) {
-    final duration = Duration(
+  Future<void> _finishRecording(Emitter<ChatState> emit) async {
+    final timerDuration = Duration(
       seconds: state.recordingSeconds.clamp(1, 3599).toInt(),
     );
-    _cancelRecording(emit);
-    _append(
-      emit,
-      state.activeId,
-      _outgoing(MessageKind.voice, duration: duration),
+    _recordingTimer?.cancel();
+    emit(
+      state.copyWith(
+        isRecording: false,
+        recordingLocked: false,
+        recordingSeconds: 0,
+        cancelProgress: 0,
+      ),
     );
+
+    final result = await _audioService.stopRecording().catchError((_) => null);
+    final duration = (result != null && result.duration.inSeconds > 0)
+        ? result.duration
+        : timerDuration;
+    final waveform = result?.waveform;
+    final localPath = result?.path;
+
+    final repo = _chatRepository;
+    final userId = _currentUserId;
+    if (repo != null && userId != null && state.activeId.isNotEmpty) {
+      final conv = state.conversations
+          .where((c) => c.id == state.activeId || c.recipientId == state.activeId)
+          .firstOrNull;
+      final peerKey = conv?.recipientPublicKey ?? '';
+
+      if (localPath != null) {
+        repo.sendVoiceMessage(
+          chatId: state.activeId,
+          localFilePath: localPath,
+          duration: duration,
+          waveform: waveform ?? const [],
+          recipientPublicKey: peerKey,
+        ).catchError((_) {});
+      }
+    } else {
+      _appendLocal(
+        emit,
+        state.activeId,
+        _outgoing(
+          MessageKind.voice,
+          duration: duration,
+          waveform: waveform,
+          asset: localPath,
+        ),
+      );
+    }
   }
 
   Timer? _typingDebounceTimer;
@@ -925,8 +1081,15 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
     }
   }
 
+  final IAudioService _audioService;
+  StreamSubscription<Duration>? _audioPositionSubscription;
+  StreamSubscription<PlayerState>? _audioStateSubscription;
+
   @override
   Future<void> close() {
+    _audioPositionSubscription?.cancel();
+    _audioStateSubscription?.cancel();
+    _audioService.dispose();
     _typingDebounceTimer?.cancel();
     if (_isCurrentUserTyping && state.activeId.isNotEmpty) {
       _updateTypingStatus(state.activeId, false);

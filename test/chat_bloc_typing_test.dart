@@ -75,6 +75,25 @@ class MockChatRepository implements IChatRepository {
 
   @override
   Future<List<RelayContact>> searchUsers(String query) async => [];
+
+  @override
+  Future<void> sendVoiceMessage({
+    required String chatId,
+    required String localFilePath,
+    required Duration duration,
+    required List<double> waveform,
+    required String recipientPublicKey,
+    String? replyTo,
+  }) async {}
+
+  @override
+  Future<String> getOrDownloadVoiceAudio({
+    required String chatId,
+    required String messageId,
+    required String audioUrl,
+    required String peerPublicKey,
+    required String nonce,
+  }) async => audioUrl;
 }
 
 void main() {
