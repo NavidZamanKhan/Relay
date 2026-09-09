@@ -410,11 +410,18 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
     });
 
     on<_ChatMessagesUpdated>((e, emit) {
+      final currentMessages = state.threads[e.chatId] ?? const [];
+      final pendingSending = currentMessages.where(
+        (m) =>
+            m.delivery == DeliveryStage.sending &&
+            !e.messages.any((rm) => rm.id == m.id),
+      );
+      final merged = [...e.messages, ...pendingSending];
       emit(
         state.copyWith(
           threads: {
             ...state.threads,
-            e.chatId: e.messages,
+            e.chatId: merged,
           },
         ),
       );

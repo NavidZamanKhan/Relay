@@ -214,5 +214,80 @@ void main() {
       expect(bloc.state.typingIds.contains(testChatId), isFalse);
       expect(bloc.state.typing, isFalse);
     });
+
+    test('incoming remote snapshot preserves local pending sending messages without deletion', () async {
+      bloc.add(const ChatOpened(testChatId));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      final pendingVoiceMessage = RelayMessage(
+        id: 'voice_pending_001',
+        senderId: currentUserId,
+        recipientId: 'user_bob',
+        sentAt: DateTime.now(),
+        kind: MessageKind.voice,
+        text: '',
+        duration: const Duration(seconds: 5),
+        waveform: const [0.2, 0.4, 0.8],
+        delivery: DeliveryStage.sending,
+        isMine: true,
+      );
+
+      // Simulate local in-flight message present in thread
+      bloc.emit(
+        bloc.state.copyWith(
+          threads: {
+            ...bloc.state.threads,
+            testChatId: [pendingVoiceMessage],
+          },
+        ),
+      );
+
+      expect(bloc.state.messages.length, equals(1));
+      expect(bloc.state.messages.first.id, equals('voice_pending_001'));
+      expect(bloc.state.messages.first.delivery, equals(DeliveryStage.sending));
+
+      // Remote Firestore stream emits a snapshot that does not have the voice note yet
+      final remoteExistingMessage = RelayMessage(
+        id: 'remote_msg_000',
+        senderId: 'user_bob',
+        recipientId: currentUserId,
+        sentAt: DateTime.now().subtract(const Duration(minutes: 1)),
+        kind: MessageKind.text,
+        text: 'Hello from Bob',
+        delivery: DeliveryStage.read,
+        isMine: false,
+      );
+
+      mockRepo.messagesController.add([remoteExistingMessage]);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      // Both the remote message and the local pending sending message must be in the thread
+      final thread = bloc.state.threads[testChatId] ?? [];
+      expect(thread.length, equals(2));
+      expect(thread.any((m) => m.id == 'remote_msg_000'), isTrue);
+      expect(thread.any((m) => m.id == 'voice_pending_001'), isTrue);
+
+      // When remote snapshot finally arrives with the confirmed voice note, it supersedes pending
+      final confirmedVoiceMessage = RelayMessage(
+        id: 'voice_pending_001',
+        senderId: currentUserId,
+        recipientId: 'user_bob',
+        sentAt: DateTime.now(),
+        kind: MessageKind.voice,
+        text: '',
+        duration: const Duration(seconds: 5),
+        waveform: const [0.2, 0.4, 0.8],
+        delivery: DeliveryStage.sent,
+        isMine: true,
+      );
+
+      mockRepo.messagesController.add([remoteExistingMessage, confirmedVoiceMessage]);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      final updatedThread = bloc.state.threads[testChatId] ?? [];
+      expect(updatedThread.length, equals(2));
+      final voiceInThread = updatedThread.firstWhere((m) => m.id == 'voice_pending_001');
+      expect(voiceInThread.delivery, equals(DeliveryStage.sent));
+    });
   });
 }

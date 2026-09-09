@@ -56,15 +56,17 @@ service cloud.firestore {
           && request.resource.data.senderId == request.auth.uid
           && exists(/databases/$(database)/documents/chats/$(chatId))
           && (request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participantIds)
-          && request.resource.data.encryptedPayload is string
-          && request.resource.data.encryptedPayload.size() <= 65536;
+          && (!('encryptedPayload' in request.resource.data) || (request.resource.data.encryptedPayload is string && request.resource.data.encryptedPayload.size() <= 65536))
+          && (!('audioUrl' in request.resource.data) || request.resource.data.audioUrl is string)
+          && (!('audioData' in request.resource.data) || request.resource.data.audioData is string)
+          && (!('waveform' in request.resource.data) || request.resource.data.waveform is list)
+          && (!('durationMs' in request.resource.data) || request.resource.data.durationMs is int);
 
         // Allow update if participant updating delivery status (sent -> delivered -> read)
         allow update: if request.auth != null
           && exists(/databases/$(database)/documents/chats/$(chatId))
           && (request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participantIds)
-          && request.resource.data.senderId == resource.data.senderId
-          && request.resource.data.encryptedPayload == resource.data.encryptedPayload;
+          && request.resource.data.senderId == resource.data.senderId;
 
         allow delete: if false;
       }

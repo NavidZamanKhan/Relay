@@ -865,6 +865,7 @@ class FirestoreChatRepository implements IChatRepository {
       recipientId: effectiveRecipientId,
       sentAt: DateTime.now(),
       kind: MessageKind.voice,
+      encryptedPayload: audioData ?? downloadUrl ?? '[Voice message]',
       audioUrl: downloadUrl,
       audioData: audioData,
       waveform: waveform,
