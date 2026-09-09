@@ -83,6 +83,17 @@ final class ChatComposerChanged extends ChatEvent {
   List<Object?> get props => [text];
 }
 
+final class ChatTypingStatusChanged extends ChatEvent {
+  const ChatTypingStatusChanged({
+    required this.chatId,
+    required this.isTyping,
+  });
+  final String chatId;
+  final bool isTyping;
+  @override
+  List<Object?> get props => [chatId, isTyping];
+}
+
 final class ChatTextSent extends ChatEvent {
   const ChatTextSent();
 }
@@ -321,7 +332,21 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
     });
 
     on<_ChatConversationsUpdated>((e, emit) {
-      emit(state.copyWith(conversations: e.conversations));
+      final activeTyping = <String>{};
+      for (final conv in e.conversations) {
+        if (conv.isPeerTyping) {
+          activeTyping.add(conv.id);
+          if (conv.recipientId != null && conv.recipientId!.isNotEmpty) {
+            activeTyping.add(conv.recipientId!);
+          }
+        }
+      }
+      emit(
+        state.copyWith(
+          conversations: e.conversations,
+          typingIds: activeTyping,
+        ),
+      );
       if (_chatRepository != null && _currentUserId != null) {
         for (final conv in e.conversations) {
           if (conv.unread > 0 && conv.delivery == DeliveryStage.sent) {
@@ -445,6 +470,9 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
           ? Conversation.directChatId(_currentUserId!, e.id)
           : e.id;
 
+      _typingDebounceTimer?.cancel();
+      _updateTypingStatus(effectiveChatId, false);
+
       if (state.activeId == effectiveChatId || state.activeId == e.id) {
         await _messagesSubscription?.cancel();
         _messagesSubscription = null;
@@ -455,13 +483,36 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
       (e, emit) => emit(state.copyWith(searchQuery: e.query)),
     );
     on<ChatFilterChanged>((e, emit) => emit(state.copyWith(filter: e.filter)));
+    on<ChatTypingStatusChanged>((e, emit) {
+      _typingDebounceTimer?.cancel();
+      _updateTypingStatus(e.chatId, e.isTyping);
+    });
     on<ChatComposerChanged>(
-      (e, emit) => emit(state.copyWith(composerText: e.text)),
+      (e, emit) {
+        emit(state.copyWith(composerText: e.text));
+        if (_chatRepository != null &&
+            _currentUserId != null &&
+            state.activeId.isNotEmpty) {
+          if (e.text.trim().isNotEmpty) {
+            _updateTypingStatus(state.activeId, true);
+            _typingDebounceTimer?.cancel();
+            _typingDebounceTimer = Timer(const Duration(milliseconds: 1500), () {
+              _updateTypingStatus(state.activeId, false);
+            });
+          } else {
+            _typingDebounceTimer?.cancel();
+            _updateTypingStatus(state.activeId, false);
+          }
+        }
+      },
     );
     on<ChatTextSent>((e, emit) async {
       final text = state.composerText.trim();
       if (text.isEmpty) return;
       final id = state.activeId;
+
+      _typingDebounceTimer?.cancel();
+      _updateTypingStatus(id, false);
 
       if (_chatRepository != null && _currentUserId != null) {
         final conv = state.conversations
@@ -857,8 +908,29 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
     );
   }
 
+  Timer? _typingDebounceTimer;
+  bool _isCurrentUserTyping = false;
+
+  void _updateTypingStatus(String chatId, bool isTyping) {
+    if (_isCurrentUserTyping == isTyping) return;
+    _isCurrentUserTyping = isTyping;
+    final repo = _chatRepository;
+    final userId = _currentUserId;
+    if (repo != null && userId != null && chatId.isNotEmpty) {
+      repo.setTypingStatus(
+        chatId: chatId,
+        userId: userId,
+        isTyping: isTyping,
+      ).catchError((_) {});
+    }
+  }
+
   @override
   Future<void> close() {
+    _typingDebounceTimer?.cancel();
+    if (_isCurrentUserTyping && state.activeId.isNotEmpty) {
+      _updateTypingStatus(state.activeId, false);
+    }
     _conversationsSubscription?.cancel();
     _messagesSubscription?.cancel();
     _voiceTimer?.cancel();

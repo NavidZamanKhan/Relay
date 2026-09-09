@@ -531,9 +531,11 @@ class FirestoreChatRepository implements IChatRepository {
       effectiveChatId = 'chat_${sorted[0]}_${sorted[1]}';
     }
 
-    await _chatsCollection.doc(effectiveChatId).update({
-      'typing.$userId': isTyping,
-    });
+    try {
+      await _chatsCollection.doc(effectiveChatId).update({
+        'typing.$userId': isTyping,
+      });
+    } catch (_) {}
   }
 
   @override

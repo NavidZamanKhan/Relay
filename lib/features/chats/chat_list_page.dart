@@ -380,36 +380,52 @@ class _ConversationTile extends StatelessWidget {
                       const SizedBox(height: 7),
                       Row(
                         children: [
-                          if (chat.delivery != null) ...[
-                            RelayReceipt(stage: chat.delivery!, size: 14),
-                            const SizedBox(width: 4),
-                          ],
-                          if (chat.previewKind != MessageKind.text) ...[
-                            Icon(
-                              switch (chat.previewKind) {
-                                MessageKind.voice => CupertinoIcons.mic,
-                                MessageKind.image => CupertinoIcons.photo,
-                                _ => CupertinoIcons.doc,
-                              },
-                              size: 14,
-                              color: muted,
-                            ),
-                            const SizedBox(width: 5),
-                          ],
-                          Expanded(
-                            child: Text(
-                              chat.lastMessage,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 12.5,
-                                color: muted,
-                                fontWeight: unread
-                                    ? FontWeight.w600
-                                    : FontWeight.w500,
+                          if (chat.isPeerTyping) ...[
+                            const Expanded(
+                              child: Text(
+                                'typing…',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  color: RelayColors.mint,
+                                  fontWeight: FontWeight.w700,
+                                  fontStyle: FontStyle.italic,
+                                ),
                               ),
                             ),
-                          ),
+                          ] else ...[
+                            if (chat.delivery != null) ...[
+                              RelayReceipt(stage: chat.delivery!, size: 14),
+                              const SizedBox(width: 4),
+                            ],
+                            if (chat.previewKind != MessageKind.text) ...[
+                              Icon(
+                                switch (chat.previewKind) {
+                                  MessageKind.voice => CupertinoIcons.mic,
+                                  MessageKind.image => CupertinoIcons.photo,
+                                  _ => CupertinoIcons.doc,
+                                },
+                                size: 14,
+                                color: muted,
+                              ),
+                              const SizedBox(width: 5),
+                            ],
+                            Expanded(
+                              child: Text(
+                                chat.lastMessage,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  color: muted,
+                                  fontWeight: unread
+                                      ? FontWeight.w600
+                                      : FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ],
                           if (chat.muted) ...[
                             const SizedBox(width: 6),
                             Icon(

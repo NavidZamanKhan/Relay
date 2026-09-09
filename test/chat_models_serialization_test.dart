@@ -268,6 +268,46 @@ void main() {
       expect(deserialized.name, equals('Bob'));
       expect(deserialized.participantNames, equals({'uid_a': 'Alice', 'uid_b': 'Bob'}));
     });
+
+    test('Conversation.fromMap parses isPeerTyping from typing map for peer participant', () {
+      final docMapWithTyping = {
+        'participantIds': ['uid_a', 'uid_b'],
+        'lastMessage': 'Typing test',
+        'typing': {
+          'uid_a': false,
+          'uid_b': true,
+        },
+      };
+
+      final convForA = Conversation.fromMap(
+        docMapWithTyping,
+        'chat_uid_a_uid_b',
+        currentUserId: 'uid_a',
+      );
+      expect(convForA.isPeerTyping, isTrue);
+
+      final convForB = Conversation.fromMap(
+        docMapWithTyping,
+        'chat_uid_a_uid_b',
+        currentUserId: 'uid_b',
+      );
+      expect(convForB.isPeerTyping, isFalse);
+
+      final docMapWithoutTyping = {
+        'participantIds': ['uid_a', 'uid_b'],
+        'lastMessage': 'No typing test',
+        'typing': {
+          'uid_b': false,
+        },
+      };
+
+      final convNotTyping = Conversation.fromMap(
+        docMapWithoutTyping,
+        'chat_uid_a_uid_b',
+        currentUserId: 'uid_a',
+      );
+      expect(convNotTyping.isPeerTyping, isFalse);
+    });
   });
 
   group('RelayContact Model', () {

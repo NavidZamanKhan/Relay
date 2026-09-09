@@ -25,6 +25,7 @@ class Conversation extends Equatable {
     this.pinned = false,
     this.isGroup = false,
     this.muted = false,
+    this.isPeerTyping = false,
   });
 
   final String id;
@@ -44,6 +45,7 @@ class Conversation extends Equatable {
   final bool pinned;
   final bool isGroup;
   final bool muted;
+  final bool isPeerTyping;
 
   Conversation copyWith({
     String? id,
@@ -63,6 +65,7 @@ class Conversation extends Equatable {
     bool? pinned,
     bool? isGroup,
     bool? muted,
+    bool? isPeerTyping,
     bool clearDelivery = false,
   }) =>
       Conversation(
@@ -83,6 +86,7 @@ class Conversation extends Equatable {
         pinned: pinned ?? this.pinned,
         isGroup: isGroup ?? this.isGroup,
         muted: muted ?? this.muted,
+        isPeerTyping: isPeerTyping ?? this.isPeerTyping,
       );
 
   /// Serializes conversation state for Firestore storage.
@@ -172,6 +176,11 @@ class Conversation extends Equatable {
             ? keysMap[otherParticipantId]?.toString()
             : null);
 
+    final typingMap = map['typing'] as Map<dynamic, dynamic>?;
+    final isPeerTyping = otherParticipantId != null &&
+        typingMap != null &&
+        (typingMap[otherParticipantId] == true);
+
     return Conversation(
       id: id,
       name: name,
@@ -190,6 +199,7 @@ class Conversation extends Equatable {
       pinned: (map['pinned'] as bool?) ?? false,
       isGroup: isGroup,
       muted: (map['muted'] as bool?) ?? false,
+      isPeerTyping: isPeerTyping,
     );
   }
 
@@ -231,5 +241,6 @@ class Conversation extends Equatable {
         pinned,
         isGroup,
         muted,
+        isPeerTyping,
       ];
 }
