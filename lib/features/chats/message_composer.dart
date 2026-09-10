@@ -126,12 +126,20 @@ class _MessageComposerState extends State<MessageComposer>
   }
 
   @override
-  Widget build(BuildContext context) => BlocBuilder<ChatBloc, ChatState>(
+  Widget build(BuildContext context) => BlocConsumer<ChatBloc, ChatState>(
+    listenWhen: (a, b) => a.replyingTo != b.replyingTo && b.replyingTo != null,
+    listener: (context, state) {
+      if (_emojiPickerOpen) {
+        setState(() => _emojiPickerOpen = false);
+      }
+      _focus.requestFocus();
+    },
     buildWhen: (a, b) =>
         a.composerText != b.composerText ||
         a.isRecording != b.isRecording ||
         a.recordingLocked != b.recordingLocked ||
-        a.recordingSeconds != b.recordingSeconds,
+        a.recordingSeconds != b.recordingSeconds ||
+        a.replyingTo != b.replyingTo,
     builder: (context, state) {
       final dark = Theme.of(context).brightness == Brightness.dark;
       final hasText = state.composerText.trim().isNotEmpty;
@@ -154,6 +162,18 @@ class _MessageComposerState extends State<MessageComposer>
             Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                AnimatedSize(
+                  duration: RelayMotion.quick,
+                  curve: Curves.easeOutCubic,
+                  child: state.replyingTo != null
+                      ? _QuotedReplyBar(
+                          replyingTo: state.replyingTo!,
+                          onDismiss: () => context.read<ChatBloc>().add(
+                            const ChatReplyTargetSet(null),
+                          ),
+                        )
+                      : const SizedBox.shrink(),
+                ),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
@@ -647,6 +667,113 @@ class _AttachmentTile extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _QuotedReplyBar extends StatelessWidget {
+  const _QuotedReplyBar({
+    required this.replyingTo,
+    required this.onDismiss,
+  });
+
+  final RelayMessage replyingTo;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    final isMine = replyingTo.isMine;
+    final snippet = replyingTo.text?.trim().isNotEmpty == true
+        ? replyingTo.text!.trim()
+        : (replyingTo.kind == MessageKind.image
+            ? 'Photo'
+            : (replyingTo.kind == MessageKind.voice
+                ? 'Voice note'
+                : 'Attachment'));
+
+    final mediaIcon = switch (replyingTo.kind) {
+      MessageKind.image => CupertinoIcons.photo,
+      MessageKind.voice => CupertinoIcons.mic,
+      MessageKind.document => CupertinoIcons.doc,
+      MessageKind.text => null,
+    };
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(12, 6, 6, 6),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border(
+          left: const BorderSide(color: RelayColors.coral, width: 3),
+          top: BorderSide(
+            color: Theme.of(context).dividerColor.withValues(alpha: .5),
+            width: .6,
+          ),
+          right: BorderSide(
+            color: Theme.of(context).dividerColor.withValues(alpha: .5),
+            width: .6,
+          ),
+          bottom: BorderSide(
+            color: Theme.of(context).dividerColor.withValues(alpha: .5),
+            width: .6,
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            CupertinoIcons.reply,
+            size: 15,
+            color: RelayColors.coral,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  isMine ? 'Replying to yourself' : 'Replying to message',
+                  style: const TextStyle(
+                    color: RelayColors.coral,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    if (mediaIcon != null) ...[
+                      Icon(mediaIcon, size: 13, color: RelayColors.inkSoft),
+                      const SizedBox(width: 4),
+                    ],
+                    Expanded(
+                      child: Text(
+                        snippet,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Theme.of(context).textTheme.bodySmall?.color,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            tooltip: 'Cancel reply',
+            icon: const Icon(CupertinoIcons.xmark, size: 16),
+            onPressed: onDismiss,
+            visualDensity: VisualDensity.compact,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          ),
+        ],
       ),
     );
   }

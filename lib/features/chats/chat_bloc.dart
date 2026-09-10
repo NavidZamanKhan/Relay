@@ -232,6 +232,13 @@ final class ChatGroupCreated extends ChatEvent {
   List<Object?> get props => [id, name, members];
 }
 
+final class ChatReplyTargetSet extends ChatEvent {
+  const ChatReplyTargetSet(this.message);
+  final RelayMessage? message;
+  @override
+  List<Object?> get props => [message];
+}
+
 final class ChatState extends Equatable {
   const ChatState({
     required this.conversations,
@@ -249,6 +256,7 @@ final class ChatState extends Equatable {
     this.recordingLocked = false,
     this.recordingSeconds = 0,
     this.cancelProgress = 0,
+    this.replyingTo,
   });
   final List<Conversation> conversations;
   final Map<String, List<RelayMessage>> threads;
@@ -259,6 +267,7 @@ final class ChatState extends Equatable {
   final bool voicePaused, isRecording, recordingLocked;
   final double voiceProgress, voiceSpeed, cancelProgress;
   final int recordingSeconds;
+  final RelayMessage? replyingTo;
   List<RelayMessage> get messages => threads[activeId] ?? const [];
   bool get typing => typingIds.contains(activeId);
   List<Conversation> get filteredConversations {
@@ -298,6 +307,8 @@ final class ChatState extends Equatable {
     bool? recordingLocked,
     int? recordingSeconds,
     double? cancelProgress,
+    RelayMessage? replyingTo,
+    bool clearReplyingTo = false,
   }) => ChatState(
     conversations: conversations ?? this.conversations,
     threads: threads ?? this.threads,
@@ -316,6 +327,7 @@ final class ChatState extends Equatable {
     recordingLocked: recordingLocked ?? this.recordingLocked,
     recordingSeconds: recordingSeconds ?? this.recordingSeconds,
     cancelProgress: cancelProgress ?? this.cancelProgress,
+    replyingTo: clearReplyingTo ? null : (replyingTo ?? this.replyingTo),
   );
   @override
   List<Object?> get props => [
@@ -334,6 +346,7 @@ final class ChatState extends Equatable {
     recordingLocked,
     recordingSeconds,
     cancelProgress,
+    replyingTo,
   ];
 }
 
@@ -538,6 +551,7 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
           recordingSeconds: 0,
           cancelProgress: 0,
           clearPlayingMessage: true,
+          clearReplyingTo: true,
           voicePaused: true,
           voiceProgress: 0,
           conversations: [
@@ -546,6 +560,15 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
                   ? c.copyWith(unread: 0)
                   : c,
           ],
+        ),
+      );
+    });
+
+    on<ChatReplyTargetSet>((e, emit) {
+      emit(
+        state.copyWith(
+          replyingTo: e.message,
+          clearReplyingTo: e.message == null,
         ),
       );
     });
@@ -598,6 +621,7 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
       final text = state.composerText.trim();
       if (text.isEmpty) return;
       final id = state.activeId;
+      final replySnippet = _formatReplySnippet(state.replyingTo);
 
       _typingDebounceTimer?.cancel();
       _updateTypingStatus(id, false);
@@ -629,6 +653,7 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
           sentAt: DateTime.now(),
           kind: MessageKind.text,
           text: text,
+          replyTo: replySnippet,
           delivery: DeliveryStage.sending,
           isMine: true,
         );
@@ -637,7 +662,7 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
         if (id != effectiveChatId) {
           _appendLocal(emit, id, outgoing);
         }
-        emit(state.copyWith(composerText: ''));
+        emit(state.copyWith(composerText: '', clearReplyingTo: true));
 
         try {
           await _chatRepository.sendMessage(
@@ -649,9 +674,13 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
         return;
       }
 
-      _append(emit, id, _outgoing(MessageKind.text, text: text));
+      _append(emit, id, _outgoing(MessageKind.text, text: text, replyTo: replySnippet));
       emit(
-        state.copyWith(composerText: '', typingIds: {...state.typingIds, id}),
+        state.copyWith(
+          composerText: '',
+          clearReplyingTo: true,
+          typingIds: {...state.typingIds, id},
+        ),
       );
       if (_demoMode) {
         _replyTimers[id]?.cancel();
@@ -679,6 +708,7 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
       final localPath = e.filePath;
       final caption = e.caption;
       final id = state.activeId;
+      final replySnippet = _formatReplySnippet(state.replyingTo);
 
       if (_chatRepository != null && _currentUserId != null) {
         final conv = state.conversations
@@ -709,6 +739,7 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
           kind: MessageKind.image,
           text: caption,
           asset: localPath,
+          replyTo: replySnippet,
           delivery: DeliveryStage.sending,
           isMine: true,
         );
@@ -717,6 +748,7 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
         if (id != effectiveChatId) {
           _appendLocal(emit, id, outgoing);
         }
+        emit(state.copyWith(clearReplyingTo: true));
 
         final repo = _chatRepository;
         final peerKey = conv?.recipientPublicKey ?? '';
@@ -726,6 +758,7 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
           recipientPublicKey: peerKey,
           caption: caption,
           messageId: messageId,
+          replyTo: replySnippet,
         ).then((_) {
           if (!isClosed) {
             add(ChatDeliveryAdvanced(effectiveChatId, messageId, DeliveryStage.sent));
@@ -745,8 +778,10 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
           MessageKind.image,
           text: caption ?? 'Photo',
           asset: localPath,
+          replyTo: replySnippet,
         ),
       );
+      emit(state.copyWith(clearReplyingTo: true));
     });
     on<ChatMessageReactionToggled>((e, emit) async {
       final userId = _currentUserId ?? 'me';
@@ -1040,6 +1075,7 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
     Duration duration = Duration.zero,
     List<double>? waveform,
     String? audioUrl,
+    String? replyTo,
   }) => RelayMessage(
     id: _id('local'),
     senderId: 'me',
@@ -1050,9 +1086,23 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
     duration: duration,
     waveform: waveform,
     audioUrl: audioUrl,
+    replyTo: replyTo,
     isMine: true,
     delivery: DeliveryStage.sending,
   );
+
+  String? _formatReplySnippet(RelayMessage? message) {
+    if (message == null) return null;
+    if (message.text != null && message.text!.trim().isNotEmpty) {
+      return message.text!.trim();
+    }
+    return switch (message.kind) {
+      MessageKind.image => 'Photo',
+      MessageKind.voice => 'Voice note',
+      MessageKind.document => 'Document',
+      MessageKind.text => 'Message',
+    };
+  }
   void _append(Emitter<ChatState> emit, String chatId, RelayMessage message) {
     final preview = switch (message.kind) {
       MessageKind.text => message.text ?? '',
@@ -1232,6 +1282,7 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
       final peerKey = conv?.recipientPublicKey ?? '';
       final messageId = _id('msg');
+      final replySnippet = _formatReplySnippet(state.replyingTo);
 
       final outgoing = RelayMessage(
         id: messageId,
@@ -1242,6 +1293,7 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
         duration: duration,
         waveform: waveform,
         asset: localPath,
+        replyTo: replySnippet,
         delivery: DeliveryStage.sending,
         isMine: true,
       );
@@ -1250,6 +1302,7 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
       if (id != effectiveChatId) {
         _appendLocal(emit, id, outgoing);
       }
+      emit(state.copyWith(clearReplyingTo: true));
 
       if (localPath != null) {
         repo.sendVoiceMessage(
@@ -1259,6 +1312,7 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
           duration: duration,
           waveform: waveform ?? const [],
           recipientPublicKey: peerKey,
+          replyTo: replySnippet,
         ).then((_) {
           if (!isClosed) {
             add(ChatDeliveryAdvanced(effectiveChatId, messageId, DeliveryStage.sent));
@@ -1276,6 +1330,7 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
         });
       }
     } else {
+      final replySnippet = _formatReplySnippet(state.replyingTo);
       _appendLocal(
         emit,
         state.activeId,
@@ -1284,8 +1339,10 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
           duration: duration,
           waveform: waveform,
           asset: localPath,
+          replyTo: replySnippet,
         ),
       );
+      emit(state.copyWith(clearReplyingTo: true));
     }
   }
 

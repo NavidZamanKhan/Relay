@@ -46,17 +46,22 @@ class MessageBubble extends StatelessWidget {
     // MessageBubble itself is intentionally static. Its parent AnimatedList
     // animates only a genuinely inserted row; delivery and playback rebuilds do
     // not make the entire history slide in again.
-    return Align(
-      alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
-      child: Padding(
-        padding: EdgeInsets.only(
-          left: mine ? 54 : 18,
-          right: mine ? 18 : 54,
-          top: grouped ? 0 : 7,
-          bottom: reactionCounts.isNotEmpty ? 14 : 4,
-        ),
-        child: Builder(
-          builder: (bubbleContext) {
+    return _SwipeToReplyWrapper(
+      message: message,
+      onReply: (msg) {
+        context.read<ChatBloc>().add(ChatReplyTargetSet(msg));
+      },
+      child: Align(
+        alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
+        child: Padding(
+          padding: EdgeInsets.only(
+            left: mine ? 54 : 18,
+            right: mine ? 18 : 54,
+            top: grouped ? 0 : 7,
+            bottom: reactionCounts.isNotEmpty ? 14 : 4,
+          ),
+          child: Builder(
+            builder: (bubbleContext) {
             return Stack(
               clipBehavior: Clip.none,
               children: [
@@ -156,8 +161,9 @@ class MessageBubble extends StatelessWidget {
           },
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   void _quickHeartReaction(BuildContext context, RelayMessage message) {
     HapticFeedback.lightImpact();
@@ -433,26 +439,9 @@ class _TextMessage extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
         if (message.replyTo != null) ...[
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.fromLTRB(10, 8, 8, 8),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: .09),
-              borderRadius: BorderRadius.circular(12),
-              border: const Border(
-                left: BorderSide(color: RelayColors.coral, width: 2.5),
-              ),
-            ),
-            child: Text(
-              message.replyTo!,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: foreground.withValues(alpha: .72),
-                fontSize: 12,
-                height: 1.3,
-              ),
-            ),
+          _ReplyPreview(
+            replyTo: message.replyTo!,
+            foreground: foreground,
           ),
           const SizedBox(height: 8),
         ],
@@ -487,6 +476,15 @@ class _ImageMessage extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (message.replyTo != null) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 4, 4, 6),
+            child: _ReplyPreview(
+              replyTo: message.replyTo!,
+              foreground: foreground,
+            ),
+          ),
+        ],
         GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: () => Navigator.of(context).push(
@@ -552,7 +550,17 @@ class _VoiceMessage extends StatelessWidget {
         return SizedBox(
           width: 240,
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              if (message.replyTo != null) ...[
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: _ReplyPreview(
+                    replyTo: message.replyTo!,
+                    foreground: foreground,
+                  ),
+                ),
+              ],
               Row(
                 children: [
                   InkWell(
@@ -1248,4 +1256,208 @@ class _PlaybackGlyph extends CustomPainter {
   @override
   bool shouldRepaint(covariant _PlaybackGlyph oldDelegate) =>
       oldDelegate.playing != playing || oldDelegate.color != color;
+}
+
+class _ReplyPreview extends StatelessWidget {
+  const _ReplyPreview({
+    required this.replyTo,
+    required this.foreground,
+  });
+
+  final String replyTo;
+  final Color foreground;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(10, 6, 8, 6),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: .07),
+        borderRadius: BorderRadius.circular(10),
+        border: const Border(
+          left: BorderSide(color: RelayColors.coral, width: 2.5),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                CupertinoIcons.reply,
+                size: 11,
+                color: RelayColors.coral,
+              ),
+              SizedBox(width: 4),
+              Text(
+                'Reply',
+                style: TextStyle(
+                  color: RelayColors.coral,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 2),
+          Text(
+            replyTo,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: foreground.withValues(alpha: .8),
+              fontSize: 12.5,
+              height: 1.25,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SwipeToReplyWrapper extends StatefulWidget {
+  const _SwipeToReplyWrapper({
+    required this.child,
+    required this.message,
+    required this.onReply,
+  });
+
+  final Widget child;
+  final RelayMessage message;
+  final ValueChanged<RelayMessage> onReply;
+
+  @override
+  State<_SwipeToReplyWrapper> createState() => _SwipeToReplyWrapperState();
+}
+
+class _SwipeToReplyWrapperState extends State<_SwipeToReplyWrapper>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late Animation<double> _animation;
+  double _dragOffset = 0.0;
+  bool _thresholdCrossed = false;
+
+  static const double _threshold = 46.0;
+  static const double _maxDrag = 70.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 220),
+    );
+    _animation = Tween<double>(begin: 0.0, end: 0.0).animate(_controller);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onHorizontalDragUpdate(DragUpdateDetails details) {
+    if (details.delta.dx < 0 && _dragOffset <= 0) {
+      return;
+    }
+    setState(() {
+      _dragOffset = (_dragOffset + details.delta.dx * 0.55).clamp(0.0, _maxDrag);
+      if (_dragOffset >= _threshold && !_thresholdCrossed) {
+        _thresholdCrossed = true;
+        HapticFeedback.lightImpact();
+      } else if (_dragOffset < _threshold && _thresholdCrossed) {
+        _thresholdCrossed = false;
+      }
+    });
+  }
+
+  void _onHorizontalDragEnd(DragEndDetails details) {
+    if (_thresholdCrossed) {
+      widget.onReply(widget.message);
+    }
+    _thresholdCrossed = false;
+    _runReturnAnimation();
+  }
+
+  void _onHorizontalDragCancel() {
+    _thresholdCrossed = false;
+    _runReturnAnimation();
+  }
+
+  void _runReturnAnimation() {
+    _animation = Tween<double>(
+      begin: _dragOffset,
+      end: 0.0,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
+    _controller.forward(from: 0.0).then((_) {
+      if (mounted) {
+        setState(() {
+          _dragOffset = 0.0;
+        });
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        final currentOffset =
+            _controller.isAnimating ? _animation.value : _dragOffset;
+        final progress = (currentOffset / _threshold).clamp(0.0, 1.0);
+
+        return Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.centerLeft,
+          children: [
+            if (currentOffset > 2)
+              Positioned(
+                left: 10 + (currentOffset * 0.22),
+                child: Opacity(
+                  opacity: progress,
+                  child: Transform.scale(
+                    scale: 0.6 + (progress * 0.4),
+                    child: Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: progress >= 1.0
+                            ? RelayColors.coral
+                            : Theme.of(context)
+                                .dividerColor
+                                .withValues(alpha: .6),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        CupertinoIcons.reply,
+                        size: 16,
+                        color: progress >= 1.0
+                            ? Colors.white
+                            : Theme.of(context).iconTheme.color,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            Transform.translate(
+              offset: Offset(currentOffset, 0),
+              child: child,
+            ),
+          ],
+        );
+      },
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onHorizontalDragUpdate: _onHorizontalDragUpdate,
+        onHorizontalDragEnd: _onHorizontalDragEnd,
+        onHorizontalDragCancel: _onHorizontalDragCancel,
+        child: widget.child,
+      ),
+    );
+  }
 }
