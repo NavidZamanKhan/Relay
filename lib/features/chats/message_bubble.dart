@@ -51,7 +51,9 @@ class MessageBubble extends StatelessWidget {
         clipBehavior: Clip.none,
         children: [
           GestureDetector(
+            behavior: HitTestBehavior.opaque,
             onLongPress: () => _showReactionSheet(context, message),
+            onDoubleTap: () => _quickHeartReaction(context, message),
             child: Container(
               constraints: BoxConstraints(
                 maxWidth:
@@ -90,6 +92,7 @@ class MessageBubble extends StatelessWidget {
                 MessageKind.image => _ImageMessage(
                   message: message,
                   foreground: foreground,
+                  onLongPress: () => _showReactionSheet(context, message),
                 ),
                 MessageKind.voice => _VoiceMessage(
                   message: message,
@@ -149,6 +152,17 @@ class MessageBubble extends StatelessWidget {
     );
   }
 
+  void _quickHeartReaction(BuildContext context, RelayMessage message) {
+    HapticFeedback.lightImpact();
+    final bloc = context.read<ChatBloc>();
+    final chatId = bloc.state.activeId;
+    final myId = bloc.currentUserId ?? 'me';
+    const heart = '\u{2764}\u{FE0F}';
+    final current = message.reactions?[myId];
+    final next = current == heart ? null : heart;
+    bloc.add(ChatMessageReactionToggled(chatId, message.id, next ?? heart));
+  }
+
   void _showReactionSheet(BuildContext context, RelayMessage message) {
     HapticFeedback.mediumImpact();
     final bloc = context.read<ChatBloc>();
@@ -173,29 +187,31 @@ class MessageBubble extends StatelessWidget {
         final dark = Theme.of(sheetContext).brightness == Brightness.dark;
         return SafeArea(
           child: Padding(
-            padding: const EdgeInsets.only(bottom: 24, left: 20, right: 20),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: dark ? const Color(0xFF22242B) : Colors.white,
-                borderRadius: BorderRadius.circular(36),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.18),
-                    blurRadius: 20,
-                    offset: const Offset(0, 6),
+            padding: const EdgeInsets.only(bottom: 24, left: 16, right: 16),
+            child: Align(
+              alignment: Alignment.bottomCenter,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: dark ? const Color(0xFF22242B) : Colors.white,
+                  borderRadius: BorderRadius.circular(36),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.18),
+                      blurRadius: 20,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
+                  border: Border.all(
+                    color: dark
+                        ? Colors.white.withValues(alpha: 0.12)
+                        : Colors.black.withValues(alpha: 0.08),
+                    width: 0.7,
                   ),
-                ],
-                border: Border.all(
-                  color: dark
-                      ? Colors.white.withValues(alpha: 0.12)
-                      : Colors.black.withValues(alpha: 0.08),
-                  width: 0.7,
                 ),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   for (final emoji in quickReactions)
                     GestureDetector(
@@ -240,8 +256,9 @@ class MessageBubble extends StatelessWidget {
               ),
             ),
           ),
-        );
-      },
+        ),
+      );
+    },
     );
   }
 
@@ -324,9 +341,14 @@ class _TextMessage extends StatelessWidget {
 }
 
 class _ImageMessage extends StatelessWidget {
-  const _ImageMessage({required this.message, required this.foreground});
+  const _ImageMessage({
+    required this.message,
+    required this.foreground,
+    this.onLongPress,
+  });
   final RelayMessage message;
   final Color foreground;
+  final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context) {
@@ -339,6 +361,7 @@ class _ImageMessage extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         GestureDetector(
+          behavior: HitTestBehavior.opaque,
           onTap: () => Navigator.of(context).push(
             PageRouteBuilder<void>(
               opaque: false,
@@ -351,6 +374,7 @@ class _ImageMessage extends StatelessWidget {
                   FadeTransition(opacity: animation, child: child),
             ),
           ),
+          onLongPress: onLongPress,
           child: Hero(
             tag: 'shared-image-${message.id}',
             child: ClipRRect(

@@ -750,7 +750,14 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
     });
     on<ChatMessageReactionToggled>((e, emit) async {
       final userId = _currentUserId ?? 'me';
-      final thread = state.threads[e.chatId];
+      final effectiveChatId = (_currentUserId != null &&
+              !e.chatId.startsWith('chat_') &&
+              !e.chatId.startsWith('group_') &&
+              e.chatId.isNotEmpty)
+          ? Conversation.directChatId(_currentUserId!, e.chatId)
+          : e.chatId;
+
+      final thread = state.threads[effectiveChatId] ?? state.threads[e.chatId];
       if (thread == null) return;
 
       final message = thread.where((m) => m.id == e.messageId).firstOrNull;
@@ -768,13 +775,17 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
       }).toList();
 
       emit(state.copyWith(
-        threads: {...state.threads, e.chatId: updatedThread},
+        threads: {
+          ...state.threads,
+          effectiveChatId: updatedThread,
+          if (effectiveChatId != e.chatId) e.chatId: updatedThread,
+        },
       ));
 
       if (_chatRepository != null && _currentUserId != null) {
         try {
           await _chatRepository.setMessageReaction(
-            chatId: e.chatId,
+            chatId: effectiveChatId,
             messageId: e.messageId,
             userId: userId,
             reaction: isRemoving ? null : e.reaction,
