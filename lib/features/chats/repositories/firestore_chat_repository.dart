@@ -188,8 +188,10 @@ class FirestoreChatRepository implements IChatRepository {
           currentUserId: currentUserId,
         );
 
-        // If message is encrypted and carries nonce, decrypt client-side
-        if (rawMessage.encryptedPayload != null && rawMessage.nonce != null) {
+        // Voice payloads are decrypted as audio bytes when playback begins.
+        if (rawMessage.kind == MessageKind.text &&
+            rawMessage.encryptedPayload != null &&
+            rawMessage.nonce != null) {
           try {
             // In 1-on-1 chats, we can look up peer key or decrypt with peer's public key
             final peerUid = rawMessage.isMine
@@ -963,7 +965,8 @@ class FirestoreChatRepository implements IChatRepository {
       batch.update(chatRef, updateData);
     }
 
-    batch.set(messageRef, message.toMap(useServerTimestamp: true));
+    // Keep the ordering timestamp available locally while the write is pending.
+    batch.set(messageRef, message.toMap(useServerTimestamp: false));
     await batch.commit();
   }
 

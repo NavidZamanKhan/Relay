@@ -420,13 +420,17 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
     on<_ChatMessagesUpdated>((e, emit) {
       final currentMessages = state.threads[e.chatId] ?? const [];
       final now = DateTime.now();
+      final snapshotIds = e.messages.map((message) => message.id).toSet();
+      // Send completion can arrive before the snapshot includes our message.
       final pendingSending = currentMessages.where(
         (m) =>
-            m.delivery == DeliveryStage.sending &&
-            !e.messages.any((rm) => rm.id == m.id) &&
-            now.difference(m.sentAt).inSeconds < 30,
+            (m.delivery == DeliveryStage.sending ||
+                (m.delivery == DeliveryStage.sent && m.isMine)) &&
+            !snapshotIds.contains(m.id) &&
+            now.difference(m.sentAt) < const Duration(seconds: 30),
       );
-      final merged = [...e.messages, ...pendingSending];
+      final merged = [...e.messages, ...pendingSending]
+        ..sort((a, b) => a.sentAt.compareTo(b.sentAt));
       emit(
         state.copyWith(
           threads: {
