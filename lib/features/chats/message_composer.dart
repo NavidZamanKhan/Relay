@@ -440,132 +440,69 @@ class _MessageComposerState extends State<MessageComposer>
       context: context,
       showDragHandle: true,
       useSafeArea: true,
-      builder: (sheet) => Padding(
-        padding: const EdgeInsets.fromLTRB(22, 0, 22, 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Add to the conversation',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 18),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(18),
-              child: GestureDetector(
-                onTap: () {
-                  Navigator.pop(sheet);
-                  _pickAndSendImage(ImageSource.gallery);
-                },
-                child: AspectRatio(
-                  aspectRatio: 2.6,
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      Image.asset(
-                        'assets/images/sylhet_evening.png',
-                        fit: BoxFit.cover,
-                        cacheWidth: 1100,
-                      ),
-                      Container(
-                        color: Colors.black.withValues(alpha: 0.28),
-                        padding: const EdgeInsets.all(14),
-                        alignment: Alignment.bottomLeft,
-                        child: const Row(
-                          children: [
-                            Icon(CupertinoIcons.photo_on_rectangle, color: Colors.white, size: 18),
-                            SizedBox(width: 8),
-                            Text(
-                              'Choose from Photos',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 13,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
+      builder: (sheet) {
+        final dark = Theme.of(context).brightness == Brightness.dark;
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(24, 6, 24, 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Share Content',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.3,
+                  color: Theme.of(context).colorScheme.onSurface,
                 ),
               ),
-            ),
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                Expanded(
-                  child: TextButton(
-                    onPressed: () {
+              const SizedBox(height: 22),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  _AttachmentTile(
+                    icon: CupertinoIcons.camera_fill,
+                    label: 'Camera',
+                    color: RelayColors.coral,
+                    backgroundColor: dark
+                        ? RelayColors.coralNight
+                        : RelayColors.coralWash,
+                    onTap: () {
                       Navigator.pop(sheet);
                       _pickAndSendImage(ImageSource.camera);
                     },
-                    child: Column(
-                      children: [
-                        Icon(
-                          CupertinoIcons.camera,
-                          size: 25,
-                          color: Theme.of(context).colorScheme.onSurface,
-                        ),
-                        const SizedBox(height: 9),
-                        Text(
-                          'Camera',
-                          style: Theme.of(context).textTheme.labelMedium,
-                        ),
-                      ],
-                    ),
                   ),
-                ),
-                Expanded(
-                  child: TextButton(
-                    onPressed: () {
+                  _AttachmentTile(
+                    icon: CupertinoIcons.photo_on_rectangle,
+                    label: 'Gallery',
+                    color: const Color(0xFF8B5CF6),
+                    backgroundColor: dark
+                        ? const Color(0xFF2A2045)
+                        : const Color(0xFFF3E8FF),
+                    onTap: () {
                       Navigator.pop(sheet);
                       _pickAndSendImage(ImageSource.gallery);
                     },
-                    child: Column(
-                      children: [
-                        Icon(
-                          CupertinoIcons.photo,
-                          size: 25,
-                          color: Theme.of(context).colorScheme.onSurface,
-                        ),
-                        const SizedBox(height: 9),
-                        Text(
-                          'Gallery',
-                          style: Theme.of(context).textTheme.labelMedium,
-                        ),
-                      ],
-                    ),
                   ),
-                ),
-                Expanded(
-                  child: TextButton(
-                    onPressed: () {
+                  _AttachmentTile(
+                    icon: CupertinoIcons.doc_fill,
+                    label: 'Document',
+                    color: RelayColors.blue,
+                    backgroundColor: dark
+                        ? const Color(0xFF1E293B)
+                        : const Color(0xFFE0EDFE),
+                    onTap: () {
                       Navigator.pop(sheet);
                       _bloc.add(const ChatMediaSent(MessageKind.document));
                     },
-                    child: Column(
-                      children: [
-                        Icon(
-                          CupertinoIcons.doc,
-                          size: 25,
-                          color: Theme.of(context).colorScheme.onSurface,
-                        ),
-                        const SizedBox(height: 9),
-                        Text(
-                          'Document',
-                          style: Theme.of(context).textTheme.labelMedium,
-                        ),
-                      ],
-                    ),
                   ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -650,4 +587,67 @@ class _LiveWavePainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _LiveWavePainter oldDelegate) =>
       oldDelegate.clock != clock;
+}
+
+class _AttachmentTile extends StatelessWidget {
+  const _AttachmentTile({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.backgroundColor,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+  final Color backgroundColor;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: () {
+        HapticFeedback.lightImpact();
+        onTap();
+      },
+      borderRadius: BorderRadius.circular(22),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 66,
+              height: 66,
+              decoration: BoxDecoration(
+                color: backgroundColor,
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(
+                  color: color.withValues(alpha: 0.2),
+                  width: 1,
+                ),
+              ),
+              alignment: Alignment.center,
+              child: Icon(
+                icon,
+                color: color,
+                size: 28,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                color: Theme.of(context).colorScheme.onSurface,
+                letterSpacing: -0.2,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
