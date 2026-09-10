@@ -191,6 +191,35 @@ void main() {
       expect(convBob.unread, 2);
     });
 
+    test('Conversation.fromMap parses schema fallback keys correctly', () {
+      final fallbackDocMap = {
+        'participants': ['user_navid', 'user_sadman'],
+        'lastMessage': 'Photo',
+        'previewKind': 'image',
+        'lastMessageTime': Timestamp.fromDate(testDate),
+        'lastMessageDelivery': 'sent',
+        'unreadCounts': {
+          'user_navid': 0,
+          'user_sadman': 1,
+        },
+        'isGroup': false,
+      };
+
+      final convSadman = Conversation.fromMap(
+        fallbackDocMap,
+        'chat_navid_sadman',
+        currentUserId: 'user_sadman',
+        fallbackName: 'Navid',
+      );
+
+      expect(convSadman.recipientId, 'user_navid');
+      expect(convSadman.unread, 1);
+      expect(convSadman.delivery, DeliveryStage.sent);
+      expect(convSadman.previewKind, MessageKind.image);
+      expect(convSadman.lastMessage, 'Photo');
+      expect(convSadman.lastMessageAt?.isAtSameMomentAs(testDate), isTrue);
+    });
+
     test('directChatId returns deterministic sorted composite ID', () {
       final id1 = Conversation.directChatId('uid_alice', 'uid_bob');
       final id2 = Conversation.directChatId('uid_bob', 'uid_alice');

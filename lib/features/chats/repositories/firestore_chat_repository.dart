@@ -503,7 +503,9 @@ class FirestoreChatRepository implements IChatRepository {
       final batch = _firestore.batch();
       batch.update(chatRef, {
         'unreadCount.$readerUserId': 0,
+        'unreadCounts.$readerUserId': 0,
         'delivery': DeliveryStage.read.toDbString(),
+        'lastMessageDelivery': DeliveryStage.read.toDbString(),
       });
 
       for (final doc in snapshot.docs) {
@@ -931,6 +933,7 @@ class FirestoreChatRepository implements IChatRepository {
         'participantNames': participantNames,
         'name': peerName,
         'lastMessage': voiceSnippet,
+        'lastMessageAt': FieldValue.serverTimestamp(),
         'lastMessageTime': FieldValue.serverTimestamp(),
         'previewKind': 'voice',
         'unreadCount': {
@@ -938,6 +941,7 @@ class FirestoreChatRepository implements IChatRepository {
           ?effectiveRecipientId: 1,
         },
         'delivery': 'sent',
+        'lastMessageDelivery': 'sent',
         'isGroup': false,
         'pinned': false,
         'muted': false,
@@ -952,9 +956,11 @@ class FirestoreChatRepository implements IChatRepository {
     } else {
       final updateData = <String, dynamic>{
         'lastMessage': voiceSnippet,
+        'lastMessageAt': FieldValue.serverTimestamp(),
         'lastMessageTime': FieldValue.serverTimestamp(),
         'previewKind': 'voice',
         'delivery': 'sent',
+        'lastMessageDelivery': 'sent',
       };
       if (effectiveRecipientId != null) {
         updateData['unreadCount.$effectiveRecipientId'] = FieldValue.increment(1);
@@ -1154,28 +1160,50 @@ class FirestoreChatRepository implements IChatRepository {
     final messageData = message.toMap(useServerTimestamp: true);
 
     if (!chatDoc.exists) {
-      batch.set(chatRef, {
+      final newConvData = <String, dynamic>{
+        'participantIds': [user.uid, effectiveRecipientId ?? ''],
         'participants': [user.uid, ?effectiveRecipientId],
+        'recipientId': effectiveRecipientId,
+        'name': peerName,
         'participantNames': participantNames,
         'createdAt': FieldValue.serverTimestamp(),
         'lastMessage': snippet,
+        'previewKind': MessageKind.image.toDbString(),
+        'lastMessageAt': FieldValue.serverTimestamp(),
         'lastMessageTime': FieldValue.serverTimestamp(),
         'lastMessageSenderId': user.uid,
+        'delivery': DeliveryStage.sent.toDbString(),
         'lastMessageDelivery': DeliveryStage.sent.toDbString(),
+        'unreadCount': {
+          user.uid: 0,
+          ?effectiveRecipientId: 1,
+        },
         'unreadCounts': {
           user.uid: 0,
           ?effectiveRecipientId: 1,
         },
-      });
+        'isGroup': false,
+        if (effectiveRecipientId != null && recipientPublicKey.isNotEmpty)
+          'participantPublicKeys': {
+            effectiveRecipientId: recipientPublicKey,
+          },
+      };
+      batch.set(chatRef, newConvData);
     } else {
-      batch.update(chatRef, {
+      final updateData = <String, dynamic>{
         'lastMessage': snippet,
+        'previewKind': MessageKind.image.toDbString(),
+        'lastMessageAt': FieldValue.serverTimestamp(),
         'lastMessageTime': FieldValue.serverTimestamp(),
         'lastMessageSenderId': user.uid,
+        'delivery': DeliveryStage.sent.toDbString(),
         'lastMessageDelivery': DeliveryStage.sent.toDbString(),
-        if (effectiveRecipientId != null)
-          'unreadCounts.$effectiveRecipientId': FieldValue.increment(1),
-      });
+      };
+      if (effectiveRecipientId != null) {
+        updateData['unreadCount.$effectiveRecipientId'] = FieldValue.increment(1);
+        updateData['unreadCounts.$effectiveRecipientId'] = FieldValue.increment(1);
+      }
+      batch.update(chatRef, updateData);
     }
 
     batch.set(messageRef, messageData);

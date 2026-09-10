@@ -115,7 +115,8 @@ class Conversation extends Equatable {
     String? fallbackAvatar,
     String? recipientPublicKey,
   }) {
-    final participants = (map['participantIds'] as List<dynamic>?)
+    final rawParticipants = map['participantIds'] ?? map['participants'];
+    final participants = (rawParticipants as List<dynamic>?)
             ?.map((e) => e.toString())
             .toList() ??
         const [];
@@ -128,7 +129,7 @@ class Conversation extends Equatable {
       }
     }
 
-    final rawTimestamp = map['lastMessageAt'];
+    final rawTimestamp = map['lastMessageAt'] ?? map['lastMessageTime'];
     DateTime? messageTime;
     if (rawTimestamp is Timestamp) {
       messageTime = rawTimestamp.toDate();
@@ -157,12 +158,12 @@ class Conversation extends Equatable {
       name = fallbackName ?? (map['name'] as String? ?? 'Relay Contact');
     }
 
-    final deliveryStr = map['delivery'] as String?;
+    final deliveryStr = (map['delivery'] ?? map['lastMessageDelivery']) as String?;
     final delivery = deliveryStr != null
         ? DeliveryStage.fromString(deliveryStr)
         : null;
 
-    final unreadMap = map['unreadCount'];
+    final unreadMap = map['unreadCount'] ?? map['unreadCounts'];
     int unread = 0;
     if (unreadMap is Map && currentUserId != null) {
       unread = (unreadMap[currentUserId] as num?)?.toInt() ?? 0;
