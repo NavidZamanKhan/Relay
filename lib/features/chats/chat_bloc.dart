@@ -127,6 +127,14 @@ final class ChatMediaSent extends ChatEvent {
   List<Object?> get props => [kind];
 }
 
+final class ChatImagePicked extends ChatEvent {
+  const ChatImagePicked(this.filePath, {this.caption});
+  final String filePath;
+  final String? caption;
+  @override
+  List<Object?> get props => [filePath, caption];
+}
+
 final class ChatDeliveryAdvanced extends ChatEvent {
   const ChatDeliveryAdvanced(this.chatId, this.messageId, this.stage);
   final String chatId, messageId;
@@ -658,6 +666,79 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
         ),
       ),
     );
+    on<ChatImagePicked>((e, emit) async {
+      final localPath = e.filePath;
+      final caption = e.caption;
+      final id = state.activeId;
+
+      if (_chatRepository != null && _currentUserId != null) {
+        final conv = state.conversations
+            .where((c) => c.id == id || c.recipientId == id)
+            .firstOrNull;
+
+        final effectiveChatId = (id.startsWith('chat_') || id.startsWith('group_'))
+            ? id
+            : (conv != null && conv.id.startsWith('chat_')
+                ? conv.id
+                : Conversation.directChatId(_currentUserId!, id));
+
+        final recipientId = conv?.recipientId ??
+            (effectiveChatId.startsWith('chat_')
+                ? effectiveChatId
+                    .replaceFirst('chat_', '')
+                    .split('_')
+                    .where((u) => u != _currentUserId)
+                    .firstOrNull
+                : null);
+
+        final messageId = _id('msg');
+        final outgoing = RelayMessage(
+          id: messageId,
+          senderId: _currentUserId!,
+          recipientId: recipientId,
+          sentAt: DateTime.now(),
+          kind: MessageKind.image,
+          text: caption,
+          asset: localPath,
+          delivery: DeliveryStage.sending,
+          isMine: true,
+        );
+
+        _appendLocal(emit, effectiveChatId, outgoing);
+        if (id != effectiveChatId) {
+          _appendLocal(emit, id, outgoing);
+        }
+
+        final repo = _chatRepository;
+        final peerKey = conv?.recipientPublicKey ?? '';
+        repo.sendImageMessage(
+          chatId: effectiveChatId,
+          localFilePath: localPath,
+          recipientPublicKey: peerKey,
+          caption: caption,
+          messageId: messageId,
+        ).then((_) {
+          if (!isClosed) {
+            add(ChatDeliveryAdvanced(effectiveChatId, messageId, DeliveryStage.sent));
+            if (id != effectiveChatId) {
+              add(ChatDeliveryAdvanced(id, messageId, DeliveryStage.sent));
+            }
+          }
+        }).catchError((_) {});
+        return;
+      }
+
+      // Demo mode fallback
+      _append(
+        emit,
+        id,
+        _outgoing(
+          MessageKind.image,
+          text: caption ?? 'Photo',
+          asset: localPath,
+        ),
+      );
+    });
     on<ChatDeliveryAdvanced>((e, emit) {
       final thread = state.threads[e.chatId];
       if (thread == null) return;

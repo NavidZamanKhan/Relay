@@ -4,6 +4,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../core/motion/relay_motion.dart';
 import '../../core/theme/relay_colors.dart';
@@ -455,14 +456,38 @@ class _MessageComposerState extends State<MessageComposer>
               child: GestureDetector(
                 onTap: () {
                   Navigator.pop(sheet);
-                  _bloc.add(const ChatMediaSent(MessageKind.image));
+                  _pickAndSendImage(ImageSource.gallery);
                 },
                 child: AspectRatio(
                   aspectRatio: 2.6,
-                  child: Image.asset(
-                    'assets/images/sylhet_evening.png',
-                    fit: BoxFit.cover,
-                    cacheWidth: 1100,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      Image.asset(
+                        'assets/images/sylhet_evening.png',
+                        fit: BoxFit.cover,
+                        cacheWidth: 1100,
+                      ),
+                      Container(
+                        color: Colors.black.withValues(alpha: 0.28),
+                        padding: const EdgeInsets.all(14),
+                        alignment: Alignment.bottomLeft,
+                        child: const Row(
+                          children: [
+                            Icon(CupertinoIcons.photo_on_rectangle, color: Colors.white, size: 18),
+                            SizedBox(width: 8),
+                            Text(
+                              'Choose from Photos',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -470,39 +495,93 @@ class _MessageComposerState extends State<MessageComposer>
             const SizedBox(height: 14),
             Row(
               children: [
-                for (final (icon, label, kind) in const [
-                  (CupertinoIcons.camera, 'Camera', MessageKind.image),
-                  (CupertinoIcons.photo, 'Gallery', MessageKind.image),
-                  (CupertinoIcons.doc, 'Document', MessageKind.document),
-                ])
-                  Expanded(
-                    child: TextButton(
-                      onPressed: () {
-                        Navigator.pop(sheet);
-                        _bloc.add(ChatMediaSent(kind));
-                      },
-                      child: Column(
-                        children: [
-                          Icon(
-                            icon,
-                            size: 25,
-                            color: Theme.of(context).colorScheme.onSurface,
-                          ),
-                          const SizedBox(height: 9),
-                          Text(
-                            label,
-                            style: Theme.of(context).textTheme.labelMedium,
-                          ),
-                        ],
-                      ),
+                Expanded(
+                  child: TextButton(
+                    onPressed: () {
+                      Navigator.pop(sheet);
+                      _pickAndSendImage(ImageSource.camera);
+                    },
+                    child: Column(
+                      children: [
+                        Icon(
+                          CupertinoIcons.camera,
+                          size: 25,
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
+                        const SizedBox(height: 9),
+                        Text(
+                          'Camera',
+                          style: Theme.of(context).textTheme.labelMedium,
+                        ),
+                      ],
                     ),
                   ),
+                ),
+                Expanded(
+                  child: TextButton(
+                    onPressed: () {
+                      Navigator.pop(sheet);
+                      _pickAndSendImage(ImageSource.gallery);
+                    },
+                    child: Column(
+                      children: [
+                        Icon(
+                          CupertinoIcons.photo,
+                          size: 25,
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
+                        const SizedBox(height: 9),
+                        Text(
+                          'Gallery',
+                          style: Theme.of(context).textTheme.labelMedium,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: TextButton(
+                    onPressed: () {
+                      Navigator.pop(sheet);
+                      _bloc.add(const ChatMediaSent(MessageKind.document));
+                    },
+                    child: Column(
+                      children: [
+                        Icon(
+                          CupertinoIcons.doc,
+                          size: 25,
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
+                        const SizedBox(height: 9),
+                        Text(
+                          'Document',
+                          style: Theme.of(context).textTheme.labelMedium,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ],
             ),
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _pickAndSendImage(ImageSource source) async {
+    try {
+      final picker = ImagePicker();
+      final picked = await picker.pickImage(
+        source: source,
+        maxWidth: 1280,
+        maxHeight: 1280,
+        imageQuality: 70,
+      );
+      if (picked != null) {
+        _bloc.add(ChatImagePicked(picked.path));
+      }
+    } catch (_) {}
   }
 }
 

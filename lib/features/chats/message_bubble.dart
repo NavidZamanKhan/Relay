@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/cupertino.dart';
@@ -147,6 +149,11 @@ class _ImageMessage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final imageSource = message.asset ??
+        message.imageUrl ??
+        message.imageData ??
+        'assets/images/sylhet_evening.png';
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -156,7 +163,7 @@ class _ImageMessage extends StatelessWidget {
               opaque: false,
               barrierColor: Colors.black.withValues(alpha: .92),
               pageBuilder: (_, animation, _) => _ImagePreview(
-                asset: message.asset!,
+                asset: imageSource,
                 heroTag: 'shared-image-${message.id}',
               ),
               transitionsBuilder: (_, animation, _, child) =>
@@ -169,38 +176,7 @@ class _ImageMessage extends StatelessWidget {
               borderRadius: BorderRadius.circular(14),
               child: AspectRatio(
                 aspectRatio: 4 / 3,
-                child: Image.asset(
-                  message.asset!,
-                  fit: BoxFit.cover,
-                  cacheWidth: 1100,
-                  frameBuilder:
-                      (context, child, frame, wasSynchronouslyLoaded) {
-                        if (wasSynchronouslyLoaded) return child;
-                        return Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            ColoredBox(
-                              color: RelayColors.ink.withValues(alpha: .12),
-                              child: const Center(
-                                child: SizedBox.square(
-                                  dimension: 23,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: RelayColors.coral,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            AnimatedOpacity(
-                              opacity: frame == null ? 0 : 1,
-                              duration: RelayMotion.quick,
-                              curve: RelayMotion.enter,
-                              child: child,
-                            ),
-                          ],
-                        );
-                      },
-                ),
+                child: _buildBubbleImage(imageSource),
               ),
             ),
           ),
@@ -484,6 +460,47 @@ class _ImagePreview extends StatelessWidget {
   final String asset;
   final String heroTag;
 
+  Widget _buildPreviewImage() {
+    if (asset.startsWith('http://') || asset.startsWith('https://')) {
+      return Image.network(
+        asset,
+        fit: BoxFit.contain,
+        loadingBuilder: (context, child, progress) {
+          if (progress == null) return child;
+          return const Center(
+            child: SizedBox.square(
+              dimension: 32,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.5,
+                color: RelayColors.coral,
+              ),
+            ),
+          );
+        },
+        errorBuilder: (context, error, stackTrace) => const Center(
+          child: Icon(CupertinoIcons.exclamationmark_triangle, color: Colors.white70, size: 40),
+        ),
+      );
+    }
+    if (asset.startsWith('data:image') || (!asset.startsWith('/') && !asset.startsWith('assets/') && asset.length > 200)) {
+      final rawBase64 = asset.contains(',') ? asset.split(',').last : asset;
+      try {
+        final bytes = base64Decode(rawBase64);
+        return Image.memory(bytes, fit: BoxFit.contain);
+      } catch (_) {}
+    }
+    if (asset.startsWith('assets/')) {
+      return Image.asset(asset, fit: BoxFit.contain);
+    }
+    return Image.file(
+      File(asset),
+      fit: BoxFit.contain,
+      errorBuilder: (context, error, stackTrace) => const Center(
+        child: Icon(CupertinoIcons.exclamationmark_triangle, color: Colors.white70, size: 40),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Material(
@@ -497,7 +514,7 @@ class _ImagePreview extends StatelessWidget {
                 child: InteractiveViewer(
                   minScale: .8,
                   maxScale: 4,
-                  child: Image.asset(asset, fit: BoxFit.contain),
+                  child: _buildPreviewImage(),
                 ),
               ),
             ),
@@ -518,6 +535,68 @@ class _ImagePreview extends StatelessWidget {
       ),
     );
   }
+}
+
+Widget _buildBubbleImage(String pathOrUrl) {
+  if (pathOrUrl.startsWith('http://') || pathOrUrl.startsWith('https://')) {
+    return Image.network(
+      pathOrUrl,
+      fit: BoxFit.cover,
+      cacheWidth: 1100,
+      loadingBuilder: (context, child, progress) {
+        if (progress == null) return child;
+        return ColoredBox(
+          color: RelayColors.ink.withValues(alpha: .12),
+          child: const Center(
+            child: SizedBox.square(
+              dimension: 23,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: RelayColors.coral,
+              ),
+            ),
+          ),
+        );
+      },
+      errorBuilder: (context, error, stackTrace) => const ColoredBox(
+        color: RelayColors.inkSoft,
+        child: Center(
+          child: Icon(CupertinoIcons.photo, color: Colors.white70, size: 28),
+        ),
+      ),
+    );
+  }
+  if (pathOrUrl.startsWith('data:image') || (!pathOrUrl.startsWith('/') && !pathOrUrl.startsWith('assets/') && pathOrUrl.length > 200)) {
+    final rawBase64 = pathOrUrl.contains(',') ? pathOrUrl.split(',').last : pathOrUrl;
+    try {
+      final bytes = base64Decode(rawBase64);
+      return Image.memory(bytes, fit: BoxFit.cover, cacheWidth: 1100);
+    } catch (_) {}
+  }
+  if (pathOrUrl.startsWith('assets/')) {
+    return Image.asset(
+      pathOrUrl,
+      fit: BoxFit.cover,
+      cacheWidth: 1100,
+      errorBuilder: (context, error, stackTrace) => const ColoredBox(
+        color: RelayColors.inkSoft,
+        child: Center(
+          child: Icon(CupertinoIcons.photo, color: Colors.white70, size: 28),
+        ),
+      ),
+    );
+  }
+  return Image.file(
+    File(pathOrUrl),
+    fit: BoxFit.cover,
+    cacheWidth: 1100,
+    errorBuilder: (context, error, stackTrace) => const ColoredBox(
+      color: RelayColors.inkSoft,
+      child: Center(
+        child: Icon(CupertinoIcons.photo, color: Colors.white70, size: 28),
+      ),
+    ),
+  );
 }
 
 class _DocumentMessage extends StatelessWidget {

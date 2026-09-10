@@ -330,4 +330,33 @@ void main() {
       expect(registeredContact.phoneNumber, '+16505550199');
     });
   });
+
+  group('RelayMessage Image Attachments Serialization', () {
+    test('serializes and deserializes imageUrl and imageData cleanly', () {
+      final imgMsg = RelayMessage(
+        id: 'msg_img_001',
+        senderId: 'user_1',
+        recipientId: 'user_2',
+        sentAt: DateTime.utc(2026, 9, 10, 12, 0),
+        kind: MessageKind.image,
+        text: 'Sunset view',
+        imageUrl: 'https://firebasestorage.googleapis.com/test_image.jpg',
+        imageData: 'BASE64_IMAGE_FALLBACK_DATA',
+        delivery: DeliveryStage.delivered,
+      );
+
+      final map = imgMsg.toMap();
+      expect(map['kind'], 'image');
+      expect(map['imageUrl'], 'https://firebasestorage.googleapis.com/test_image.jpg');
+      expect(map['imageData'], 'BASE64_IMAGE_FALLBACK_DATA');
+      expect(map['text'], 'Sunset view');
+
+      final restored = RelayMessage.fromMap(map, 'msg_img_001', currentUserId: 'user_1');
+      expect(restored.kind, MessageKind.image);
+      expect(restored.imageUrl, 'https://firebasestorage.googleapis.com/test_image.jpg');
+      expect(restored.imageData, 'BASE64_IMAGE_FALLBACK_DATA');
+      expect(restored.text, 'Sunset view');
+      expect(restored.isMine, isTrue);
+    });
+  });
 }

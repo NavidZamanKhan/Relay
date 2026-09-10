@@ -79,5 +79,9 @@
 	</array>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Relay requires microphone access to record and send push-to-talk voice notes.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Relay requires camera access to capture and share photos in chat.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Relay requires photo library access to select and share images in chat.</string>
 </dict>
 </plist>

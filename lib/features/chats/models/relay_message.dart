@@ -21,6 +21,8 @@ class RelayMessage extends Equatable {
     this.waveform,
     this.audioUrl,
     this.audioData,
+    this.imageUrl,
+    this.imageData,
     this.isMine = false,
     this.delivery = DeliveryStage.read,
     this.replyTo,
@@ -40,6 +42,8 @@ class RelayMessage extends Equatable {
   final List<double>? waveform;
   final String? audioUrl;
   final String? audioData;
+  final String? imageUrl;
+  final String? imageData;
   final bool isMine;
   final DeliveryStage delivery;
   final String? replyTo;
@@ -59,6 +63,8 @@ class RelayMessage extends Equatable {
     List<double>? waveform,
     String? audioUrl,
     String? audioData,
+    String? imageUrl,
+    String? imageData,
     bool? isMine,
     DeliveryStage? delivery,
     String? replyTo,
@@ -78,6 +84,8 @@ class RelayMessage extends Equatable {
         waveform: waveform ?? this.waveform,
         audioUrl: audioUrl ?? this.audioUrl,
         audioData: audioData ?? this.audioData,
+        imageUrl: imageUrl ?? this.imageUrl,
+        imageData: imageData ?? this.imageData,
         isMine: isMine ?? this.isMine,
         delivery: delivery ?? this.delivery,
         replyTo: replyTo ?? this.replyTo,
@@ -93,6 +101,7 @@ class RelayMessage extends Equatable {
           ? FieldValue.serverTimestamp()
           : Timestamp.fromDate(sentAt),
       'delivery': delivery.toDbString(),
+      if (text != null) 'text': text,
       if (encryptedPayload != null) 'encryptedPayload': encryptedPayload,
       if (nonce != null) 'nonce': nonce,
       if (ephemeralPublicKey != null)
@@ -103,6 +112,8 @@ class RelayMessage extends Equatable {
       if (waveform != null && waveform!.isNotEmpty) 'waveform': waveform,
       if (audioUrl != null) 'audioUrl': audioUrl,
       if (audioData != null) 'audioData': audioData,
+      if (imageUrl != null) 'imageUrl': imageUrl,
+      if (imageData != null) 'imageData': imageData,
       if (replyTo != null) 'replyTo': replyTo,
     };
   }
@@ -136,6 +147,8 @@ class RelayMessage extends Equatable {
         .toList(growable: false);
     final audioUrl = map['audioUrl'] as String?;
     final audioData = map['audioData'] as String?;
+    final imageUrl = map['imageUrl'] as String?;
+    final imageData = map['imageData'] as String?;
 
     return RelayMessage(
       id: id,
@@ -152,6 +165,8 @@ class RelayMessage extends Equatable {
       waveform: waveform,
       audioUrl: audioUrl,
       audioData: audioData,
+      imageUrl: imageUrl,
+      imageData: imageData,
       isMine: currentUserId != null ? (sender == currentUserId) : false,
       delivery: delivery,
       replyTo: map['replyTo'] as String?,
@@ -174,6 +189,8 @@ class RelayMessage extends Equatable {
         waveform,
         audioUrl,
         audioData,
+        imageUrl,
+        imageData,
         isMine,
         delivery,
         replyTo,

@@ -82,4 +82,24 @@ abstract interface class IChatRepository {
     required String peerPublicKey,
     required String nonce,
   });
+
+  /// Uploads a locally compressed image to Cloud Storage (with resilient inline
+  /// fallback) and writes the image message document into Firestore.
+  Future<void> sendImageMessage({
+    required String chatId,
+    required String localFilePath,
+    required String recipientPublicKey,
+    String? caption,
+    String? messageId,
+    String? replyTo,
+  });
+
+  /// Resolves the local image file for an image message, downloading from
+  /// Cloud Storage (or decoding inline data) if not already cached.
+  Future<String> getOrDownloadImage({
+    required String chatId,
+    required String messageId,
+    required String imageUrl,
+    String? imageData,
+  });
 }

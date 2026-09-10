@@ -1035,4 +1035,200 @@ class FirestoreChatRepository implements IChatRepository {
     await localCacheFile.writeAsBytes(decryptedBytes, flush: true);
     return localCacheFile.path;
   }
+
+  @override
+  Future<void> sendImageMessage({
+    required String chatId,
+    required String localFilePath,
+    required String recipientPublicKey,
+    String? caption,
+    String? messageId,
+    String? replyTo,
+  }) async {
+    final user = _auth.currentUser;
+    if (user == null) throw StateError('User not authenticated');
+
+    String effectiveChatId = chatId;
+    if (!effectiveChatId.startsWith('chat_') && !effectiveChatId.startsWith('group_')) {
+      final sorted = [user.uid, effectiveChatId]..sort();
+      effectiveChatId = 'chat_${sorted[0]}_${sorted[1]}';
+    }
+
+    // Resolve recipient ID
+    String? effectiveRecipientId;
+    if (effectiveChatId.startsWith('chat_')) {
+      final parts = effectiveChatId.replaceFirst('chat_', '').split('_');
+      effectiveRecipientId = parts.first == user.uid ? parts.last : parts.first;
+    }
+
+    final effectiveMessageId = (messageId != null && messageId.isNotEmpty)
+        ? messageId
+        : 'msg_${DateTime.now().millisecondsSinceEpoch}_${user.uid.substring(0, math.min(6, user.uid.length))}';
+
+    // 1. Read local image bytes
+    final imageFile = File(localFilePath);
+    if (!await imageFile.exists()) {
+      throw StateError('Local image file not found: $localFilePath');
+    }
+    final rawBytes = await imageFile.readAsBytes();
+
+    // 2. Upload image to Firebase Cloud Storage with resilient inline fallback
+    String? downloadUrl;
+    String? imageData;
+    try {
+      final storagePath = 'chats/$effectiveChatId/images/$effectiveMessageId.jpg';
+      final storageRef = _storage.ref(storagePath);
+      final uploadTask = await storageRef.putData(
+        rawBytes,
+        SettableMetadata(contentType: 'image/jpeg'),
+      ).timeout(const Duration(milliseconds: 2500));
+      downloadUrl = await uploadTask.ref.getDownloadURL().timeout(const Duration(milliseconds: 1500));
+    } catch (_) {
+      // Resilient fallback to inline base64 if Cloud Storage times out, offline, or unprovisioned
+      if (rawBytes.length < 800 * 1024) {
+        imageData = base64Encode(rawBytes);
+      } else {
+        rethrow;
+      }
+    }
+
+    // 3. Cache local image file so sender does not re-download
+    try {
+      final cacheDir = await getTemporaryDirectory();
+      final localCacheFile = File('${cacheDir.path}/img_$effectiveMessageId.jpg');
+      if (localFilePath != localCacheFile.path) {
+        await imageFile.copy(localCacheFile.path);
+      }
+    } catch (_) {}
+
+    // 4. Construct RelayMessage and batch write to Firestore
+    final message = RelayMessage(
+      id: effectiveMessageId,
+      senderId: user.uid,
+      recipientId: effectiveRecipientId,
+      sentAt: DateTime.now(),
+      kind: MessageKind.image,
+      text: caption,
+      imageUrl: downloadUrl,
+      imageData: imageData,
+      asset: localFilePath,
+      delivery: DeliveryStage.sent,
+      replyTo: replyTo,
+    );
+
+    final chatRef = _chatsCollection.doc(effectiveChatId);
+    final messageRef = chatRef.collection('messages').doc(effectiveMessageId);
+    final chatDoc = await chatRef.get();
+    final batch = _firestore.batch();
+
+    String currentUserName = 'Me';
+    try {
+      if (_userDisplayNameCache.containsKey(user.uid)) {
+        currentUserName = _userDisplayNameCache[user.uid]!;
+      } else {
+        final myDoc = await _usersCollection.doc(user.uid).get();
+        currentUserName = (myDoc.data()?['displayName'] as String?)?.trim() ?? 'Me';
+        _userDisplayNameCache[user.uid] = currentUserName;
+      }
+    } catch (_) {}
+
+    String peerName = 'Relay Contact';
+    if (effectiveRecipientId != null) {
+      if (_userDisplayNameCache.containsKey(effectiveRecipientId)) {
+        peerName = _userDisplayNameCache[effectiveRecipientId]!;
+      } else {
+        try {
+          final pDoc = await _usersCollection.doc(effectiveRecipientId).get();
+          peerName = (pDoc.data()?['displayName'] as String?)?.trim() ?? 'Relay Contact';
+          _userDisplayNameCache[effectiveRecipientId] = peerName;
+        } catch (_) {}
+      }
+    }
+
+    final participantNames = {
+      user.uid: currentUserName,
+      ?effectiveRecipientId: peerName,
+    };
+
+    final snippet = caption != null && caption.isNotEmpty ? caption : 'Photo';
+    final messageData = message.toMap(useServerTimestamp: true);
+
+    if (!chatDoc.exists) {
+      batch.set(chatRef, {
+        'participants': [user.uid, ?effectiveRecipientId],
+        'participantNames': participantNames,
+        'createdAt': FieldValue.serverTimestamp(),
+        'lastMessage': snippet,
+        'lastMessageTime': FieldValue.serverTimestamp(),
+        'lastMessageSenderId': user.uid,
+        'lastMessageDelivery': DeliveryStage.sent.toDbString(),
+        'unreadCounts': {
+          user.uid: 0,
+          ?effectiveRecipientId: 1,
+        },
+      });
+    } else {
+      batch.update(chatRef, {
+        'lastMessage': snippet,
+        'lastMessageTime': FieldValue.serverTimestamp(),
+        'lastMessageSenderId': user.uid,
+        'lastMessageDelivery': DeliveryStage.sent.toDbString(),
+        if (effectiveRecipientId != null)
+          'unreadCounts.$effectiveRecipientId': FieldValue.increment(1),
+      });
+    }
+
+    batch.set(messageRef, messageData);
+    await batch.commit();
+  }
+
+  @override
+  Future<String> getOrDownloadImage({
+    required String chatId,
+    required String messageId,
+    required String imageUrl,
+    String? imageData,
+  }) async {
+    final cacheDir = await getTemporaryDirectory();
+    final localCacheFile = File('${cacheDir.path}/img_$messageId.jpg');
+
+    // Return cached file if present and valid
+    if (await localCacheFile.exists() && await localCacheFile.length() > 0) {
+      return localCacheFile.path;
+    }
+
+    // Check if imageUrl is already a local file path
+    if (imageUrl.isNotEmpty && File(imageUrl).existsSync()) {
+      return imageUrl;
+    }
+
+    // Download image bytes from Cloud Storage or decode inline imageData
+    Uint8List? imageBytes;
+    if (imageUrl.isNotEmpty) {
+      try {
+        if (imageUrl.startsWith('gs://') || !imageUrl.startsWith('http')) {
+          final storageRef = _storage.ref(imageUrl);
+          imageBytes = await storageRef.getData().timeout(const Duration(milliseconds: 3000));
+        } else {
+          final storageRef = _storage.refFromURL(imageUrl);
+          imageBytes = await storageRef.getData().timeout(const Duration(milliseconds: 3000));
+        }
+      } catch (_) {}
+    }
+
+    if ((imageBytes == null || imageBytes.isEmpty) &&
+        imageData != null &&
+        imageData.isNotEmpty) {
+      try {
+        imageBytes = base64Decode(imageData);
+      } catch (_) {}
+    }
+
+    if (imageBytes == null || imageBytes.isEmpty) {
+      throw StateError('Image payload empty or not found in storage');
+    }
+
+    await localCacheFile.writeAsBytes(imageBytes, flush: true);
+    return localCacheFile.path;
+  }
 }

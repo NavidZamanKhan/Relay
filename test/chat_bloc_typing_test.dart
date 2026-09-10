@@ -96,6 +96,24 @@ class MockChatRepository implements IChatRepository {
     required String peerPublicKey,
     required String nonce,
   }) async => audioUrl;
+
+  @override
+  Future<void> sendImageMessage({
+    required String chatId,
+    required String localFilePath,
+    required String recipientPublicKey,
+    String? caption,
+    String? messageId,
+    String? replyTo,
+  }) async {}
+
+  @override
+  Future<String> getOrDownloadImage({
+    required String chatId,
+    required String messageId,
+    required String imageUrl,
+    String? imageData,
+  }) async => imageUrl;
 }
 
 void main() {
