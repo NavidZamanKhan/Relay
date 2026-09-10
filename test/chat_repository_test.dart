@@ -4,9 +4,11 @@ import 'package:relay/features/chats/chat_models.dart';
 import 'package:relay/features/chats/repositories/firestore_chat_repository.dart';
 
 class FakeUser extends Fake implements User {
-  FakeUser({required this.uid});
+  FakeUser({required this.uid, this.photoURL});
   @override
   final String uid;
+  @override
+  final String? photoURL;
 }
 
 class FakeFirebaseAuth extends Fake implements FirebaseAuth {

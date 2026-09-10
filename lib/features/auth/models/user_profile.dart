@@ -9,6 +9,7 @@ class UserProfile extends Equatable {
     required this.displayName,
     required this.about,
     required this.publicKey,
+    this.avatarUrl,
     this.createdAt,
     this.updatedAt,
     this.isOnline = false,
@@ -21,6 +22,7 @@ class UserProfile extends Equatable {
   final String displayName;
   final String about;
   final String publicKey;
+  final String? avatarUrl;
   final DateTime? createdAt;
   final DateTime? updatedAt;
   final bool isOnline;
@@ -33,6 +35,7 @@ class UserProfile extends Equatable {
     String? displayName,
     String? about,
     String? publicKey,
+    String? avatarUrl,
     DateTime? createdAt,
     DateTime? updatedAt,
     bool? isOnline,
@@ -45,6 +48,7 @@ class UserProfile extends Equatable {
       displayName: displayName ?? this.displayName,
       about: about ?? this.about,
       publicKey: publicKey ?? this.publicKey,
+      avatarUrl: avatarUrl ?? this.avatarUrl,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       isOnline: isOnline ?? this.isOnline,
@@ -61,6 +65,7 @@ class UserProfile extends Equatable {
       'displayName': displayName,
       'about': about,
       'publicKey': publicKey,
+      'avatarUrl': avatarUrl,
       'isOnline': isOnline,
       'updatedAt': FieldValue.serverTimestamp(),
       if (lastSeen != null) 'lastSeen': Timestamp.fromDate(lastSeen!),
@@ -83,6 +88,7 @@ class UserProfile extends Equatable {
       displayName: map['displayName'] as String? ?? '',
       about: map['about'] as String? ?? '',
       publicKey: map['publicKey'] as String? ?? '',
+      avatarUrl: (map['avatarUrl'] ?? map['photoUrl']) as String?,
       createdAt: parseTimestamp(map['createdAt']),
       updatedAt: parseTimestamp(map['updatedAt']),
       isOnline: (map['isOnline'] as bool?) ?? false,
@@ -98,6 +104,7 @@ class UserProfile extends Equatable {
         displayName,
         about,
         publicKey,
+        avatarUrl,
         createdAt,
         updatedAt,
         isOnline,

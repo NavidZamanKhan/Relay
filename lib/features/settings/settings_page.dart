@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../app_bloc.dart';
 import '../../core/motion/relay_motion.dart';
 import '../../core/theme/relay_colors.dart';
+import '../../core/widgets/relay_avatar.dart';
 import '../../core/widgets/relay_button.dart';
 import '../auth/auth_bloc.dart';
 import '../auth/profile_setup_page.dart';
@@ -46,6 +47,7 @@ class SettingsPage extends StatelessWidget {
                 : auth.displayName.characters.first.toUpperCase(),
             name: auth.displayName,
             about: auth.about,
+            avatarUrl: auth.avatarUrl,
           ),
           const SizedBox(height: 20),
           const _SectionLabel('Appearance'),
@@ -225,11 +227,13 @@ class _ProfileRow extends StatelessWidget {
     required this.initial,
     required this.name,
     required this.about,
+    this.avatarUrl,
   });
 
   final String initial;
   final String name;
   final String about;
+  final String? avatarUrl;
 
   @override
   Widget build(BuildContext context) {
@@ -250,26 +254,10 @@ class _ProfileRow extends StatelessWidget {
           ),
           child: Row(
             children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: const BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [RelayColors.coralWash, RelayColors.coral],
-                  ),
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  initial,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                    color: RelayColors.ink,
-                  ),
-                ),
+              RelayAvatar(
+                name: name.isEmpty ? initial : name,
+                asset: avatarUrl,
+                size: 48,
               ),
               const SizedBox(width: 12),
               Expanded(

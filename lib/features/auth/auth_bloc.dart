@@ -1,8 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:equatable/equatable.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../../core/crypto/crypto_service.dart';
 import 'models/user_profile.dart';
@@ -68,12 +72,21 @@ final class AuthResendTicked extends AuthEvent {
 }
 
 final class AuthProfileUpdated extends AuthEvent {
-  const AuthProfileUpdated({required this.name, required this.about});
+  const AuthProfileUpdated({
+    required this.name,
+    required this.about,
+    this.avatarFilePath,
+    this.avatarUrl,
+    this.removeAvatar = false,
+  });
   final String name;
   final String about;
+  final String? avatarFilePath;
+  final String? avatarUrl;
+  final bool removeAvatar;
 
   @override
-  List<Object?> get props => [name, about];
+  List<Object?> get props => [name, about, avatarFilePath, avatarUrl, removeAvatar];
 }
 
 final class AuthRestarted extends AuthEvent {
@@ -143,6 +156,7 @@ final class AuthState extends Equatable {
     this.resendSeconds = 30,
     this.displayName = 'Navid',
     this.about = 'Building things worth keeping open.',
+    this.avatarUrl,
     this.countryIso = 'BD',
     this.countryCode = '+880',
     this.countryQuery = '',
@@ -160,6 +174,7 @@ final class AuthState extends Equatable {
   final int resendSeconds;
   final String displayName;
   final String about;
+  final String? avatarUrl;
   final String countryIso;
   final String countryCode;
   final String countryQuery;
@@ -177,6 +192,8 @@ final class AuthState extends Equatable {
     int? resendSeconds,
     String? displayName,
     String? about,
+    String? avatarUrl,
+    bool clearAvatar = false,
     String? countryIso,
     String? countryCode,
     String? countryQuery,
@@ -195,6 +212,7 @@ final class AuthState extends Equatable {
       resendSeconds: resendSeconds ?? this.resendSeconds,
       displayName: displayName ?? this.displayName,
       about: about ?? this.about,
+      avatarUrl: clearAvatar ? null : (avatarUrl ?? this.avatarUrl),
       countryIso: countryIso ?? this.countryIso,
       countryCode: countryCode ?? this.countryCode,
       countryQuery: countryQuery ?? this.countryQuery,
@@ -215,6 +233,7 @@ final class AuthState extends Equatable {
         resendSeconds,
         displayName,
         about,
+        avatarUrl,
         countryIso,
         countryCode,
         countryQuery,
@@ -233,10 +252,12 @@ final class AuthBloc extends Bloc<AuthEvent, AuthState> {
     IAuthRepository? authRepository,
     IUserRepository? userRepository,
     CryptoService? cryptoService,
+    FirebaseStorage? storage,
     bool previewAuthenticated = true,
   })  : _authRepository = authRepository,
         _userRepository = userRepository,
         _cryptoService = cryptoService,
+        _customStorage = storage,
         super(
           AuthState(
             step: previewAuthenticated ? AuthStep.complete : AuthStep.phone,
@@ -270,6 +291,8 @@ final class AuthBloc extends Bloc<AuthEvent, AuthState> {
   final IAuthRepository? _authRepository;
   final IUserRepository? _userRepository;
   final CryptoService? _cryptoService;
+  final FirebaseStorage? _customStorage;
+  FirebaseStorage get _storage => _customStorage ?? FirebaseStorage.instance;
   StreamSubscription<User?>? _authStateSubscription;
   Timer? _resendTimer;
   int _verificationEpoch = 0;
@@ -389,6 +412,7 @@ final class AuthBloc extends Bloc<AuthEvent, AuthState> {
                 step: AuthStep.complete,
                 displayName: existingProfile.displayName,
                 about: existingProfile.about,
+                avatarUrl: existingProfile.avatarUrl,
                 phone: existingProfile.phoneNumber.isNotEmpty
                     ? existingProfile.phoneNumber
                     : state.phone,
@@ -507,6 +531,7 @@ final class AuthBloc extends Bloc<AuthEvent, AuthState> {
           step: AuthStep.complete,
           displayName: existingProfile.displayName,
           about: existingProfile.about,
+          avatarUrl: existingProfile.avatarUrl,
           phone: existingProfile.phoneNumber.isNotEmpty
               ? existingProfile.phoneNumber
               : state.phone,
@@ -598,6 +623,59 @@ final class AuthBloc extends Bloc<AuthEvent, AuthState> {
 
     emit(state.copyWith(isVerifying: true, clearError: true));
 
+    final uid = _authRepository?.currentUser?.uid ?? state.userId;
+
+    String? finalAvatarUrl = state.avatarUrl;
+    if (event.removeAvatar) {
+      finalAvatarUrl = null;
+    } else if (event.avatarFilePath != null && event.avatarFilePath!.isNotEmpty) {
+      final file = File(event.avatarFilePath!);
+      if (await file.exists()) {
+        final rawBytes = await file.readAsBytes();
+        String? downloadUrl;
+        String? base64Data;
+        try {
+          final storagePath = 'users/${uid ?? "user"}/avatar.jpg';
+          final storageRef = _storage.ref(storagePath);
+          final uploadTask = await storageRef.putData(
+            rawBytes,
+            SettableMetadata(contentType: 'image/jpeg'),
+          ).timeout(const Duration(milliseconds: 3500));
+          downloadUrl = await uploadTask.ref.getDownloadURL().timeout(const Duration(milliseconds: 2500));
+        } catch (_) {
+          // Inline base64 fallback maintains $0 budget resilience if Cloud Storage is offline or unprovisioned
+          if (rawBytes.length < 800 * 1024) {
+            base64Data = 'data:image/jpeg;base64,${base64Encode(rawBytes)}';
+          }
+        }
+
+        // Cache locally in persistent application documents directory
+        try {
+          final docsDir = await getApplicationDocumentsDirectory();
+          final avatarsDir = Directory('${docsDir.path}/relay_avatars');
+          if (!await avatarsDir.exists()) {
+            await avatarsDir.create(recursive: true);
+          }
+          final localCacheFile = File('${avatarsDir.path}/avatar_${uid ?? "user"}.jpg');
+          await localCacheFile.writeAsBytes(rawBytes);
+        } catch (_) {}
+
+        finalAvatarUrl = downloadUrl ?? base64Data ?? file.path;
+      }
+    } else if (event.avatarUrl != null) {
+      finalAvatarUrl = event.avatarUrl;
+    }
+
+    // Sync to FirebaseAuth currentUser photoURL
+    try {
+      if (event.removeAvatar) {
+        await _authRepository?.currentUser?.updatePhotoURL(null);
+      } else if (finalAvatarUrl != null &&
+          (finalAvatarUrl.startsWith('http://') || finalAvatarUrl.startsWith('https://'))) {
+        await _authRepository?.currentUser?.updatePhotoURL(finalAvatarUrl);
+      }
+    } catch (_) {}
+
     if (_userRepository == null || _cryptoService == null) {
       // Mock / preview mode fallback for tests
       emit(
@@ -605,6 +683,8 @@ final class AuthBloc extends Bloc<AuthEvent, AuthState> {
           step: AuthStep.complete,
           displayName: sanitizedName,
           about: sanitizedAbout,
+          avatarUrl: finalAvatarUrl,
+          clearAvatar: event.removeAvatar,
           isVerifying: false,
           clearError: true,
         ),
@@ -613,7 +693,6 @@ final class AuthBloc extends Bloc<AuthEvent, AuthState> {
     }
 
     try {
-      final uid = _authRepository?.currentUser?.uid ?? state.userId;
       if (uid == null) {
         emit(
           state.copyWith(
@@ -637,6 +716,7 @@ final class AuthBloc extends Bloc<AuthEvent, AuthState> {
         displayName: sanitizedName,
         about: sanitizedAbout,
         publicKey: publicKey,
+        avatarUrl: finalAvatarUrl,
         encryptedKeyVault: keyVault,
       );
 
@@ -647,6 +727,8 @@ final class AuthBloc extends Bloc<AuthEvent, AuthState> {
           step: AuthStep.complete,
           displayName: sanitizedName,
           about: sanitizedAbout,
+          avatarUrl: finalAvatarUrl,
+          clearAvatar: event.removeAvatar,
           publicKey: publicKey,
           userId: uid,
           isVerifying: false,
@@ -725,6 +807,21 @@ final class AuthBloc extends Bloc<AuthEvent, AuthState> {
       // Tolerant of brand-new profiles or initial database synchronization
     }
 
+    String? photoUrl;
+    try {
+      photoUrl = user.photoURL;
+    } catch (_) {}
+    String? effectiveAvatar = profile?.avatarUrl ?? photoUrl;
+    if (effectiveAvatar == null || effectiveAvatar.isEmpty) {
+      try {
+        final docsDir = await getApplicationDocumentsDirectory();
+        final localFile = File('${docsDir.path}/relay_avatars/avatar_${user.uid}.jpg');
+        if (await localFile.exists()) {
+          effectiveAvatar = localFile.path;
+        }
+      } catch (_) {}
+    }
+
     if (profile != null && profile.displayName.isNotEmpty) {
       final effectivePub = await _syncOrRestoreKeyVault(
         uid: user.uid,
@@ -735,6 +832,7 @@ final class AuthBloc extends Bloc<AuthEvent, AuthState> {
           step: AuthStep.complete,
           displayName: profile.displayName,
           about: profile.about,
+          avatarUrl: effectiveAvatar,
           phone: profile.phoneNumber.isNotEmpty
               ? profile.phoneNumber
               : (user.phoneNumber ?? state.phone),
@@ -749,6 +847,7 @@ final class AuthBloc extends Bloc<AuthEvent, AuthState> {
         state.copyWith(
           step: AuthStep.profile,
           userId: user.uid,
+          avatarUrl: effectiveAvatar,
           phone: user.phoneNumber ?? state.phone,
           isVerifying: false,
           clearError: true,

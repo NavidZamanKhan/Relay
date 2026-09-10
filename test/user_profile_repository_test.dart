@@ -5,11 +5,13 @@ import 'package:relay/features/auth/models/user_profile.dart';
 import 'package:relay/features/auth/repositories/firestore_user_repository.dart';
 
 class FakeUser extends Fake implements User {
-  FakeUser({required this.uid, this.phoneNumber});
+  FakeUser({required this.uid, this.phoneNumber, this.photoURL});
   @override
   final String uid;
   @override
   final String? phoneNumber;
+  @override
+  final String? photoURL;
 }
 
 class FakeFirebaseAuth extends Fake implements FirebaseAuth {
@@ -38,8 +40,23 @@ void main() {
       expect(map['displayName'], 'Navid');
       expect(map['about'], 'Building Relay.');
       expect(map['publicKey'], 'base64_x25519_key_32bytes_mock');
+      expect(map['avatarUrl'], isNull);
       expect(map['encryptedKeyVault'], '{"ciphertext":"c123","nonce":"n123","v":1}');
       expect(map['updatedAt'], isA<FieldValue>());
+    });
+
+    test('serializes with avatarUrl correctly', () {
+      const profile = UserProfile(
+        uid: 'user_123',
+        phoneNumber: '+16505551234',
+        displayName: 'Navid',
+        about: 'Building Relay.',
+        publicKey: 'pub_key',
+        avatarUrl: 'https://firebasestorage.googleapis.com/avatar.jpg',
+      );
+
+      final map = profile.toMap();
+      expect(map['avatarUrl'], 'https://firebasestorage.googleapis.com/avatar.jpg');
     });
 
     test('deserializes safely with missing or corrupted fields', () {
@@ -52,8 +69,23 @@ void main() {
       expect(profile.about, '');
       expect(profile.phoneNumber, '');
       expect(profile.publicKey, '');
+      expect(profile.avatarUrl, isNull);
       expect(profile.encryptedKeyVault, isNull);
       expect(profile.createdAt, isNull);
+    });
+
+    test('deserializes avatarUrl from avatarUrl or photoUrl keys', () {
+      final p1 = UserProfile.fromMap(const {
+        'displayName': 'Alice',
+        'avatarUrl': 'https://example.com/alice.jpg',
+      }, 'uid_1');
+      expect(p1.avatarUrl, 'https://example.com/alice.jpg');
+
+      final p2 = UserProfile.fromMap(const {
+        'displayName': 'Bob',
+        'photoUrl': 'https://example.com/bob.jpg',
+      }, 'uid_2');
+      expect(p2.avatarUrl, 'https://example.com/bob.jpg');
     });
   });
 

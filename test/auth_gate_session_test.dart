@@ -9,11 +9,17 @@ import 'package:relay/features/auth/repositories/i_auth_repository.dart';
 import 'package:relay/features/auth/repositories/i_user_repository.dart';
 
 class FakeUser extends Fake implements User {
-  FakeUser({required this.uid, this.phoneNumber = '+16505551234'});
+  FakeUser({
+    required this.uid,
+    this.phoneNumber = '+16505551234',
+    this.photoURL,
+  });
   @override
   final String uid;
   @override
   final String? phoneNumber;
+  @override
+  final String? photoURL;
 }
 
 class FakeUserCredential extends Fake implements UserCredential {
@@ -334,6 +340,68 @@ void main() {
       // Verify that device 2 now has the identical private key
       expect(await dev2Crypto.hasLocalPrivateKey(), isTrue);
       expect(await dev2Storage.read(key: 'relay_x25519_private_key'), equals(dev1Priv));
+
+      await bloc.close();
+    });
+
+    test('AuthProfileUpdated updates displayName, about, and avatarUrl in state and repository', () async {
+      final user = FakeUser(uid: 'user_profile_update');
+      authRepo.emitUser(user);
+
+      final bloc = AuthBloc(
+        authRepository: authRepo,
+        userRepository: userRepo,
+        cryptoService: cryptoService,
+        previewAuthenticated: false,
+      );
+
+      bloc.add(const AuthProfileUpdated(
+        name: 'Sadman Chowdhury',
+        about: 'Testing Relay avatar sync',
+        avatarUrl: 'https://firebasestorage.googleapis.com/avatar123.jpg',
+      ));
+
+      await expectLater(
+        bloc.stream,
+        emitsThrough(
+          predicate<AuthState>(
+            (s) =>
+                s.step == AuthStep.complete &&
+                s.displayName == 'Sadman Chowdhury' &&
+                s.about == 'Testing Relay avatar sync' &&
+                s.avatarUrl == 'https://firebasestorage.googleapis.com/avatar123.jpg',
+          ),
+        ),
+      );
+
+      final saved = await userRepo.getUserProfile('user_profile_update');
+      expect(saved, isNotNull);
+      expect(saved!.displayName, 'Sadman Chowdhury');
+      expect(saved.about, 'Testing Relay avatar sync');
+      expect(saved.avatarUrl, 'https://firebasestorage.googleapis.com/avatar123.jpg');
+
+      // Test removal of avatar
+      bloc.add(const AuthProfileUpdated(
+        name: 'Sadman Chowdhury',
+        about: 'Removed avatar',
+        removeAvatar: true,
+      ));
+
+      await expectLater(
+        bloc.stream,
+        emitsThrough(
+          predicate<AuthState>(
+            (s) =>
+                s.step == AuthStep.complete &&
+                s.displayName == 'Sadman Chowdhury' &&
+                s.about == 'Removed avatar' &&
+                s.avatarUrl == null,
+          ),
+        ),
+      );
+
+      final savedAfterRemoval = await userRepo.getUserProfile('user_profile_update');
+      expect(savedAfterRemoval!.avatarUrl, isNull);
 
       await bloc.close();
     });
