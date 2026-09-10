@@ -6,19 +6,20 @@ import 'package:flutter/material.dart';
 import '../motion/relay_motion.dart';
 import '../theme/relay_colors.dart';
 
-/// A production-grade, Cupertino-styled native emoji picker for Relay.
+/// A production-grade, Cupertino-styled native emoji keyboard drawer for Relay.
 ///
-/// Provides the complete Unicode 15 emoji library (1,600+ emojis across 8 categories)
-/// in an instantaneous, zero-latency drawer with authentic Apple iOS styling.
-/// Operates completely in-memory with pure Dart to ensure zero platform-channel
-/// overhead, zero loading delays, and zero dependency on native storage plugins.
+/// Implements Apple's authentic continuous vertical scroll architecture with
+/// all 1,600+ Unicode 15 emojis across all standard categories, section headers,
+/// instant category jump navigation, in-memory recents, live keyword search,
+/// and grapheme-safe backspace. Operates 100% in-memory with pure Dart for zero
+/// platform-channel latency and zero native storage plugin dependencies.
 class RelayEmojiPicker extends StatefulWidget {
   const RelayEmojiPicker({
     super.key,
     required this.textEditingController,
     this.onEmojiSelected,
     this.onBackspacePressed,
-    this.height = 270,
+    this.height = 290,
   });
 
   final TextEditingController textEditingController;
@@ -34,37 +35,35 @@ class RelayEmojiPicker extends StatefulWidget {
 }
 
 class _RelayEmojiPickerState extends State<RelayEmojiPicker> {
-  late final PageController _pageController;
-  late final TextEditingController _searchController;
+  final ScrollController _scrollController = ScrollController();
+  final TextEditingController _searchController = TextEditingController();
   int _selectedCategoryIndex = 0;
   bool _isSearchOpen = false;
   List<Emoji> _searchResults = const [];
 
   static const List<(Category, IconData, String)> _categoryDefinitions = [
-    (Category.SMILEYS, CupertinoIcons.smiley, 'Smileys'),
-    (Category.ANIMALS, CupertinoIcons.paw, 'Animals'),
-    (Category.FOODS, CupertinoIcons.cart, 'Food'),
-    (Category.ACTIVITIES, CupertinoIcons.sportscourt, 'Activities'),
-    (Category.TRAVEL, CupertinoIcons.car_detailed, 'Travel'),
-    (Category.OBJECTS, CupertinoIcons.lightbulb, 'Objects'),
-    (Category.SYMBOLS, CupertinoIcons.number, 'Symbols'),
-    (Category.FLAGS, CupertinoIcons.flag, 'Flags'),
+    (Category.SMILEYS, CupertinoIcons.smiley, 'SMILEYS & PEOPLE'),
+    (Category.ANIMALS, CupertinoIcons.paw, 'ANIMALS & NATURE'),
+    (Category.FOODS, CupertinoIcons.cart, 'FOOD & DRINK'),
+    (Category.ACTIVITIES, CupertinoIcons.sportscourt, 'ACTIVITIES'),
+    (Category.TRAVEL, CupertinoIcons.car_detailed, 'TRAVEL & PLACES'),
+    (Category.OBJECTS, CupertinoIcons.lightbulb, 'OBJECTS'),
+    (Category.SYMBOLS, CupertinoIcons.number, 'SYMBOLS'),
+    (Category.FLAGS, CupertinoIcons.flag, 'FLAGS'),
   ];
 
   static final List<Emoji> _allEmojis = [
     for (final category in defaultEmojiSet) ...category.emoji,
   ];
 
-  @override
-  void initState() {
-    super.initState();
-    _pageController = PageController();
-    _searchController = TextEditingController();
-  }
+  final Map<Category, GlobalKey> _categoryKeys = {
+    for (final def in _categoryDefinitions) def.$1: GlobalKey(),
+    Category.RECENT: GlobalKey(),
+  };
 
   @override
   void dispose() {
-    _pageController.dispose();
+    _scrollController.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -72,7 +71,7 @@ class _RelayEmojiPickerState extends State<RelayEmojiPicker> {
   List<(Category, IconData, String)> get _activeCategories {
     if (RelayEmojiPicker._sessionRecents.isNotEmpty) {
       return [
-        (Category.RECENT, CupertinoIcons.clock, 'Recents'),
+        (Category.RECENT, CupertinoIcons.clock, 'FREQUENTLY USED'),
         ..._categoryDefinitions,
       ];
     }
@@ -150,13 +149,20 @@ class _RelayEmojiPickerState extends State<RelayEmojiPicker> {
     widget.onBackspacePressed?.call();
   }
 
-  void _onCategoryTapped(int index) {
+  void _onCategoryTapped(int index, Category category) {
     setState(() {
       _selectedCategoryIndex = index;
       _isSearchOpen = false;
     });
-    if (_pageController.hasClients) {
-      _pageController.jumpToPage(index);
+
+    final key = _categoryKeys[category];
+    if (key?.currentContext != null) {
+      Scrollable.ensureVisible(
+        key!.currentContext!,
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOutCubic,
+        alignment: 0.0,
+      );
     }
   }
 
@@ -194,7 +200,7 @@ class _RelayEmojiPickerState extends State<RelayEmojiPicker> {
           Expanded(
             child: _isSearchOpen
                 ? _buildSearchBody(backgroundColor, surfaceColor, iconColor, columns)
-                : _buildCategoryPageView(categories, backgroundColor, columns),
+                : _buildContinuousEmojiList(categories, iconColor, columns),
           ),
           _buildCategoryBar(categories, surfaceColor, iconColor, activeColor),
         ],
@@ -202,50 +208,54 @@ class _RelayEmojiPickerState extends State<RelayEmojiPicker> {
     );
   }
 
-  Widget _buildCategoryPageView(
+  Widget _buildContinuousEmojiList(
     List<(Category, IconData, String)> categories,
-    Color backgroundColor,
+    Color iconColor,
     int columns,
   ) {
-    return PageView.builder(
-      controller: _pageController,
-      itemCount: categories.length,
-      onPageChanged: (index) {
-        setState(() => _selectedCategoryIndex = index);
-      },
-      itemBuilder: (context, pageIndex) {
-        final categoryDef = categories[pageIndex];
-        final emojis = _emojisForCategory(categoryDef.$1);
-
-        if (emojis.isEmpty && categoryDef.$1 == Category.RECENT) {
-          return const Center(
-            child: Text(
-              'No Recent Emojis',
-              style: TextStyle(
-                color: RelayColors.inkSoft,
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
+    return CustomScrollView(
+      controller: _scrollController,
+      physics: const BouncingScrollPhysics(),
+      slivers: [
+        for (final catDef in categories) ...[
+          SliverToBoxAdapter(
+            key: _categoryKeys[catDef.$1],
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 4),
+              child: Text(
+                catDef.$3,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w600,
+                  color: iconColor,
+                  letterSpacing: 0.6,
+                ),
               ),
             ),
-          );
-        }
-
-        return GridView.builder(
-          key: PageStorageKey<String>('emoji-page-${categoryDef.$1.name}'),
-          physics: const BouncingScrollPhysics(),
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: columns,
-            crossAxisSpacing: 2,
-            mainAxisSpacing: 2,
           ),
-          itemCount: emojis.length,
-          itemBuilder: (context, emojiIndex) {
-            final emoji = emojis[emojiIndex];
-            return _buildEmojiButton(categoryDef.$1, emoji);
-          },
-        );
-      },
+          SliverPadding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            sliver: SliverGrid(
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: columns,
+                crossAxisSpacing: 2,
+                mainAxisSpacing: 2,
+              ),
+              delegate: SliverChildBuilderDelegate(
+                (context, index) {
+                  final emojis = _emojisForCategory(catDef.$1);
+                  if (index >= emojis.length) return null;
+                  return _buildEmojiButton(catDef.$1, emojis[index]);
+                },
+                childCount: _emojisForCategory(catDef.$1).length,
+              ),
+            ),
+          ),
+        ],
+        const SliverToBoxAdapter(
+          child: SizedBox(height: 12),
+        ),
+      ],
     );
   }
 
@@ -433,7 +443,7 @@ class _RelayEmojiPickerState extends State<RelayEmojiPicker> {
                 for (int i = 0; i < categories.length; i++)
                   GestureDetector(
                     behavior: HitTestBehavior.opaque,
-                    onTap: () => _onCategoryTapped(i),
+                    onTap: () => _onCategoryTapped(i, categories[i].$1),
                     child: SizedBox(
                       width: 32,
                       height: 44,
