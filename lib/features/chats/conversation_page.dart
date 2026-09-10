@@ -169,11 +169,14 @@ class _ConversationHeader extends StatelessWidget {
           ),
           Hero(
             tag: 'avatar-$contactId',
-            child: RelayAvatar(
-              name: displayName,
-              asset: avatarAsset,
-              online: false,
-              size: 40,
+            child: Material(
+              type: MaterialType.transparency,
+              child: RelayAvatar(
+                name: displayName,
+                asset: avatarAsset,
+                online: false,
+                size: 40,
+              ),
             ),
           ),
           const SizedBox(width: 10),
