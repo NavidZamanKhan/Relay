@@ -19,7 +19,7 @@ class _FakeChatRepository extends Fake implements IChatRepository {
 }
 
 void main() {
-  testWidgets('RelayEmojiPicker renders cleanly with TextEditingController', (
+  testWidgets('RelayEmojiPicker renders cleanly without loading spinner', (
     tester,
   ) async {
     final controller = TextEditingController();
@@ -35,9 +35,70 @@ void main() {
       ),
     );
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 100));
 
     expect(find.byType(RelayEmojiPicker), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+  });
+
+  testWidgets('RelayEmojiPicker inserts emoji on tap and deletes with backspace', (
+    tester,
+  ) async {
+    final controller = TextEditingController();
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RelayEmojiPicker(
+            textEditingController: controller,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // Find emoji buttons in grid
+    final firstEmoji = find.byType(GestureDetector).first;
+    await tester.tap(firstEmoji);
+    await tester.pump();
+
+    expect(controller.text.isNotEmpty, isTrue);
+
+    // Tap backspace
+    final backspace = find.byIcon(CupertinoIcons.delete_left);
+    expect(backspace, findsOneWidget);
+    await tester.tap(backspace);
+    await tester.pump();
+
+    expect(controller.text.isEmpty, isTrue);
+  });
+
+  testWidgets('RelayEmojiPicker searches emojis and filters results', (
+    tester,
+  ) async {
+    final controller = TextEditingController();
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RelayEmojiPicker(
+            textEditingController: controller,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // Tap search button
+    await tester.tap(find.byIcon(CupertinoIcons.search));
+    await tester.pump();
+
+    expect(find.byType(TextField), findsOneWidget);
+    await tester.enterText(find.byType(TextField), 'fire');
+    await tester.pump();
+
+    expect(find.byType(GridView), findsOneWidget);
   });
 
   testWidgets('MessageComposer toggles emoji picker via smiley and keyboard button', (
