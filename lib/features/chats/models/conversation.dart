@@ -182,10 +182,17 @@ class Conversation extends Equatable {
         typingMap != null &&
         (typingMap[otherParticipantId] == true);
 
+    final rawAvatars = map['participantAvatars'] as Map<dynamic, dynamic>?;
+    final resolvedAvatar = fallbackAvatar ??
+        (otherParticipantId != null && rawAvatars != null
+            ? rawAvatars[otherParticipantId]?.toString()
+            : null) ??
+        map['avatarAsset'] as String?;
+
     return Conversation(
       id: id,
       name: name,
-      avatarAsset: fallbackAvatar ?? map['avatarAsset'] as String?,
+      avatarAsset: resolvedAvatar,
       lastMessage: map['lastMessage'] as String? ?? '',
       timeLabel: timeString,
       lastMessageAt: messageTime,

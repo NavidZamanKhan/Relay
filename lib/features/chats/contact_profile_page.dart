@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../core/theme/relay_colors.dart';
 import '../../core/widgets/relay_avatar.dart';
+import '../auth/models/user_profile.dart';
+import '../auth/repositories/i_user_repository.dart';
 import 'chat_bloc.dart';
 
 class ContactProfilePage extends StatelessWidget {
@@ -11,12 +13,89 @@ class ContactProfilePage extends StatelessWidget {
     required this.name,
     required this.avatarAsset,
     required this.online,
+    this.peerUid,
+    this.about,
+    this.phoneNumber,
   });
+
   final String name;
   final String? avatarAsset;
   final bool online;
+  final String? peerUid;
+  final String? about;
+  final String? phoneNumber;
+
   @override
-  Widget build(BuildContext context) => Scaffold(
+  Widget build(BuildContext context) {
+    IUserRepository? userRepo;
+    if (peerUid != null && peerUid!.isNotEmpty) {
+      try {
+        userRepo = context.read<IUserRepository>();
+      } catch (_) {}
+    }
+
+    if (userRepo != null && peerUid != null && peerUid!.isNotEmpty) {
+      return StreamBuilder<UserProfile?>(
+        stream: userRepo.watchUserProfile(peerUid!),
+        builder: (context, snapshot) {
+          final profile = snapshot.data;
+          final liveName = (profile?.displayName.trim().isNotEmpty == true)
+              ? profile!.displayName.trim()
+              : name;
+          final liveAvatar = profile?.avatarUrl ?? avatarAsset;
+          final liveOnline = profile?.isOnline ?? online;
+          final liveAbout = (profile?.about.trim().isNotEmpty == true)
+              ? profile!.about.trim()
+              : (about?.trim().isNotEmpty == true
+                  ? about!.trim()
+                  : (liveName == 'Mom'
+                      ? 'Call when you reach. Always.'
+                      : 'Collecting quiet places and very loud memories.'));
+          final livePhone = (profile?.phoneNumber.trim().isNotEmpty == true)
+              ? profile!.phoneNumber.trim()
+              : (phoneNumber?.trim().isNotEmpty == true
+                  ? phoneNumber!.trim()
+                  : '');
+
+          return _buildScaffold(
+            context,
+            name: liveName,
+            avatarAsset: liveAvatar,
+            online: liveOnline,
+            about: liveAbout,
+            phoneNumber: livePhone,
+          );
+        },
+      );
+    }
+
+    final fallbackAbout = (about?.trim().isNotEmpty == true)
+        ? about!.trim()
+        : (name == 'Mom'
+            ? 'Call when you reach. Always.'
+            : 'Collecting quiet places and very loud memories.');
+    final fallbackPhone = (phoneNumber?.trim().isNotEmpty == true)
+        ? phoneNumber!.trim()
+        : '';
+
+    return _buildScaffold(
+      context,
+      name: name,
+      avatarAsset: avatarAsset,
+      online: online,
+      about: fallbackAbout,
+      phoneNumber: fallbackPhone,
+    );
+  }
+
+  Widget _buildScaffold(
+    BuildContext context, {
+    required String name,
+    required String? avatarAsset,
+    required bool online,
+    required String about,
+    required String phoneNumber,
+  }) => Scaffold(
     appBar: AppBar(
       leading: IconButton(
         tooltip: 'Back',
@@ -72,21 +151,21 @@ class ContactProfilePage extends StatelessWidget {
               ),
               const SizedBox(height: 10),
               Text(
-                name == 'Mom'
-                    ? 'Call when you reach. Always.'
-                    : 'Collecting quiet places and very loud memories.',
+                about,
                 style: Theme.of(
                   context,
                 ).textTheme.bodyLarge?.copyWith(height: 1.6),
               ),
-              const Divider(height: 30),
-              const Row(
-                children: [
-                  Icon(CupertinoIcons.phone, size: 18),
-                  SizedBox(width: 12),
-                  Text('+880 17•• ••• ••42'),
-                ],
-              ),
+              if (phoneNumber.isNotEmpty) ...[
+                const Divider(height: 30),
+                Row(
+                  children: [
+                    const Icon(CupertinoIcons.phone, size: 18),
+                    const SizedBox(width: 12),
+                    Text(phoneNumber),
+                  ],
+                ),
+              ],
             ],
           ),
         ),

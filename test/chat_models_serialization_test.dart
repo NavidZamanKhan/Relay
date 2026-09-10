@@ -388,4 +388,62 @@ void main() {
       expect(restored.isMine, isTrue);
     });
   });
+
+  group('Conversation Avatar Synchronization', () {
+    test('resolves peer avatar from participantAvatars map for other participant', () {
+      final docMap = {
+        'participantIds': ['user_me', 'user_peer'],
+        'participantNames': {
+          'user_me': 'Myself',
+          'user_peer': 'Aisha Rahman',
+        },
+        'participantAvatars': {
+          'user_me': 'https://storage/me.jpg',
+          'user_peer': 'https://storage/aisha.jpg',
+        },
+        'lastMessage': 'See you soon!',
+      };
+
+      final conv = Conversation.fromMap(
+        docMap,
+        'chat_user_me_user_peer',
+        currentUserId: 'user_me',
+      );
+
+      expect(conv.name, 'Aisha Rahman');
+      expect(conv.avatarAsset, 'https://storage/aisha.jpg');
+    });
+
+    test('prefers fallbackAvatar when provided', () {
+      final docMap = {
+        'participantIds': ['user_me', 'user_peer'],
+        'participantNames': {'user_peer': 'Peer'},
+        'participantAvatars': {'user_peer': 'https://storage/old.jpg'},
+      };
+
+      final conv = Conversation.fromMap(
+        docMap,
+        'chat_user_me_user_peer',
+        currentUserId: 'user_me',
+        fallbackAvatar: 'https://storage/new_resolved.jpg',
+      );
+
+      expect(conv.avatarAsset, 'https://storage/new_resolved.jpg');
+    });
+
+    test('RelayContact preserves and updates avatarUrl with copyWith', () {
+      const contact = RelayContact(
+        id: 'contact_42',
+        displayName: 'Tariq',
+        phoneNumber: '+16505559999',
+        avatarUrl: 'https://storage/tariq.jpg',
+      );
+
+      expect(contact.avatarUrl, 'https://storage/tariq.jpg');
+
+      final updated = contact.copyWith(avatarUrl: 'https://storage/tariq_new.jpg');
+      expect(updated.avatarUrl, 'https://storage/tariq_new.jpg');
+      expect(updated.displayName, 'Tariq');
+    });
+  });
 }

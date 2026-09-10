@@ -72,9 +72,13 @@ class _ChatListPageState extends State<ChatListPage> {
                       onPressed: () => Navigator.of(
                         context,
                       ).push(RelayMotion.route(const SettingsPage())),
-                      icon: BlocSelector<AuthBloc, AuthState, String>(
-                        selector: (s) => s.displayName,
-                        builder: (_, name) => RelayAvatar(name: name, size: 36),
+                      icon: BlocSelector<AuthBloc, AuthState, (String, String?)>(
+                        selector: (s) => (s.displayName, s.avatarUrl),
+                        builder: (_, data) => RelayAvatar(
+                          name: data.$1,
+                          asset: data.$2,
+                          size: 36,
+                        ),
                       ),
                     ),
                   ],

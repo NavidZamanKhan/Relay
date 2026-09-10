@@ -42,6 +42,7 @@ class FirestoreChatRepository implements IChatRepository {
   final Map<String, List<int>> _sharedSecretCache = {};
   final Map<String, String> _userDisplayNameCache = {};
   final Map<String, String> _userPublicKeyCache = {};
+  final Map<String, String> _userAvatarCache = {};
 
   CollectionReference<Map<String, dynamic>> get _chatsCollection =>
       _firestore.collection('chats');
@@ -59,6 +60,23 @@ class FirestoreChatRepository implements IChatRepository {
     );
     _sharedSecretCache[peerPublicKey] = derived;
     return derived;
+  }
+
+  /// Helper to get or fetch cached avatar URL for a user.
+  Future<String?> _getOrFetchUserAvatar(String uid) async {
+    if (_userAvatarCache.containsKey(uid)) {
+      return _userAvatarCache[uid];
+    }
+    try {
+      final doc = await _usersCollection.doc(uid).get();
+      final av = (doc.data()?['avatarUrl'] ?? doc.data()?['photoUrl']) as String?;
+      if (av != null && av.trim().isNotEmpty) {
+        final trimmed = av.trim();
+        _userAvatarCache[uid] = trimmed;
+        return trimmed;
+      }
+    } catch (_) {}
+    return null;
   }
 
   @override
@@ -84,6 +102,7 @@ class FirestoreChatRepository implements IChatRepository {
 
         String? resolvedFallbackName;
         String? resolvedPublicKey;
+        String? resolvedFallbackAvatar;
         if (!isGroup && otherParticipantId.isNotEmpty) {
           final rawNames = data['participantNames'] as Map<dynamic, dynamic>?;
           if (rawNames != null &&
@@ -110,6 +129,30 @@ class FirestoreChatRepository implements IChatRepository {
                 }
               } catch (_) {}
             }
+          }
+
+          // Resolve avatar: from chat doc, cache, or user doc
+          final rawAvatars = data['participantAvatars'] as Map<dynamic, dynamic>?;
+          if (rawAvatars != null &&
+              rawAvatars[otherParticipantId] != null &&
+              rawAvatars[otherParticipantId].toString().trim().isNotEmpty) {
+            resolvedFallbackAvatar = rawAvatars[otherParticipantId].toString().trim();
+            _userAvatarCache[otherParticipantId] = resolvedFallbackAvatar;
+          } else if (_userAvatarCache.containsKey(otherParticipantId)) {
+            resolvedFallbackAvatar = _userAvatarCache[otherParticipantId];
+          } else {
+            try {
+              final userDoc =
+                  await _usersCollection.doc(otherParticipantId).get();
+              final av = (userDoc.data()?['avatarUrl'] ?? userDoc.data()?['photoUrl']) as String?;
+              if (av != null && av.trim().isNotEmpty) {
+                resolvedFallbackAvatar = av.trim();
+                _userAvatarCache[otherParticipantId] = resolvedFallbackAvatar;
+                _chatsCollection.doc(doc.id).update({
+                  'participantAvatars.$otherParticipantId': resolvedFallbackAvatar,
+                }).catchError((_) {});
+              }
+            } catch (_) {}
           }
 
           // Resolve canonical public key and self-heal stale chat metadata
@@ -145,6 +188,7 @@ class FirestoreChatRepository implements IChatRepository {
             doc.id,
             currentUserId: currentUserId,
             fallbackName: resolvedFallbackName,
+            fallbackAvatar: resolvedFallbackAvatar,
             recipientPublicKey: resolvedPublicKey,
           ),
         );
@@ -342,6 +386,15 @@ class FirestoreChatRepository implements IChatRepository {
       ?effectiveRecipientId: peerName,
     };
 
+    final myAvatar = await _getOrFetchUserAvatar(user.uid);
+    final peerAvatar = effectiveRecipientId != null
+        ? await _getOrFetchUserAvatar(effectiveRecipientId)
+        : null;
+    final participantAvatars = {
+      user.uid: ?myAvatar,
+      ?effectiveRecipientId: ?peerAvatar,
+    };
+
     if (!chatDoc.exists) {
       String myPublicKey = '';
       try {
@@ -353,6 +406,8 @@ class FirestoreChatRepository implements IChatRepository {
         'recipientId': effectiveRecipientId,
         'name': peerName,
         'participantNames': participantNames,
+        if (participantAvatars.isNotEmpty)
+          'participantAvatars': participantAvatars,
         'lastMessage': message.text ?? 'Media message',
         'previewKind': message.kind.toDbString(),
         'lastMessageAt': FieldValue.serverTimestamp(),
@@ -389,6 +444,12 @@ class FirestoreChatRepository implements IChatRepository {
     if (existingData != null) {
       if (existingData['participantNames'] == null) {
         updateData['participantNames'] = participantNames;
+      }
+      if (myAvatar != null) {
+        final existingAvatars = existingData['participantAvatars'] as Map<dynamic, dynamic>?;
+        if (existingAvatars?[user.uid] != myAvatar) {
+          updateData['participantAvatars.${user.uid}'] = myAvatar;
+        }
       }
       // Synchronize recipient's public key on parent chat doc if changed or missing
       if (effectiveRecipientId != null && effectivePublicKey.isNotEmpty) {
@@ -604,6 +665,13 @@ class FirestoreChatRepository implements IChatRepository {
       recipientUserId: recipientName,
     };
 
+    final myAvatar = await _getOrFetchUserAvatar(currentUserId);
+    final peerAvatar = await _getOrFetchUserAvatar(recipientUserId);
+    final participantAvatars = {
+      currentUserId: ?myAvatar,
+      recipientUserId: ?peerAvatar,
+    };
+
     final docRef = _chatsCollection.doc(canonicalId);
     final snapshot = await docRef.get();
 
@@ -637,6 +705,16 @@ class FirestoreChatRepository implements IChatRepository {
           recipientUserId: recipientName,
         };
       }
+      final existingAvatars = data['participantAvatars'] as Map<dynamic, dynamic>?;
+      if (existingAvatars == null ||
+          (myAvatar != null && existingAvatars[currentUserId] != myAvatar) ||
+          (peerAvatar != null && existingAvatars[recipientUserId] != peerAvatar)) {
+        updates['participantAvatars'] = {
+          ...?existingAvatars,
+          currentUserId: ?myAvatar,
+          recipientUserId: ?peerAvatar,
+        };
+      }
       if (updates.isNotEmpty) {
         await docRef.update(updates);
       }
@@ -645,10 +723,13 @@ class FirestoreChatRepository implements IChatRepository {
           ...data,
           if (updates.containsKey('participantNames'))
             'participantNames': updates['participantNames'],
+          if (updates.containsKey('participantAvatars'))
+            'participantAvatars': updates['participantAvatars'],
         },
         canonicalId,
         currentUserId: currentUserId,
         fallbackName: recipientName,
+        fallbackAvatar: peerAvatar,
         recipientPublicKey: resolvedPeerKey.isNotEmpty ? resolvedPeerKey : null,
       );
     }
@@ -659,6 +740,8 @@ class FirestoreChatRepository implements IChatRepository {
       'recipientId': recipientUserId,
       'name': recipientName,
       'participantNames': participantNames,
+      if (participantAvatars.isNotEmpty)
+        'participantAvatars': participantAvatars,
       'lastMessage': 'Started a new relay',
       'previewKind': 'text',
       'lastMessageAt': FieldValue.serverTimestamp(),
@@ -713,6 +796,10 @@ class FirestoreChatRepository implements IChatRepository {
 
       for (final doc in querySnapshot.docs) {
         final data = doc.data();
+        final av = (data['avatarUrl'] ?? data['photoUrl']) as String?;
+        if (av != null && av.trim().isNotEmpty) {
+          _userAvatarCache[doc.id] = av.trim();
+        }
         matched.add(
           RelayContact(
             id: doc.id,
@@ -720,6 +807,7 @@ class FirestoreChatRepository implements IChatRepository {
             phoneNumber: (data['phoneNumber'] as String?) ?? '',
             publicKey: data['publicKey'] as String?,
             about: data['about'] as String?,
+            avatarUrl: av?.trim(),
             isRegistered: true,
           ),
         );
@@ -741,6 +829,10 @@ class FirestoreChatRepository implements IChatRepository {
       final data = doc.data();
       final name = (data['displayName'] as String?) ?? '';
       final phone = (data['phoneNumber'] as String?) ?? '';
+      final av = (data['avatarUrl'] ?? data['photoUrl']) as String?;
+      if (av != null && av.trim().isNotEmpty) {
+        _userAvatarCache[doc.id] = av.trim();
+      }
 
       if (cleanQuery.isEmpty ||
           name.toLowerCase().contains(cleanQuery.toLowerCase()) ||
@@ -752,6 +844,7 @@ class FirestoreChatRepository implements IChatRepository {
             phoneNumber: phone,
             publicKey: data['publicKey'] as String?,
             about: data['about'] as String?,
+            avatarUrl: av?.trim(),
             isRegistered: true,
           ),
         );
@@ -916,6 +1009,15 @@ class FirestoreChatRepository implements IChatRepository {
       ?effectiveRecipientId: peerName,
     };
 
+    final myAvatar = await _getOrFetchUserAvatar(user.uid);
+    final peerAvatar = effectiveRecipientId != null
+        ? await _getOrFetchUserAvatar(effectiveRecipientId)
+        : null;
+    final participantAvatars = {
+      user.uid: ?myAvatar,
+      ?effectiveRecipientId: ?peerAvatar,
+    };
+
     final durationSeconds = duration.inSeconds;
     final durationMinutes = duration.inMinutes;
     final secondsRem = durationSeconds % 60;
@@ -931,6 +1033,8 @@ class FirestoreChatRepository implements IChatRepository {
       final newConvData = <String, dynamic>{
         'participantIds': [user.uid, effectiveRecipientId ?? ''],
         'participantNames': participantNames,
+        if (participantAvatars.isNotEmpty)
+          'participantAvatars': participantAvatars,
         'name': peerName,
         'lastMessage': voiceSnippet,
         'lastMessageAt': FieldValue.serverTimestamp(),
@@ -1163,6 +1267,15 @@ class FirestoreChatRepository implements IChatRepository {
       ?effectiveRecipientId: peerName,
     };
 
+    final myAvatar = await _getOrFetchUserAvatar(user.uid);
+    final peerAvatar = effectiveRecipientId != null
+        ? await _getOrFetchUserAvatar(effectiveRecipientId)
+        : null;
+    final participantAvatars = {
+      user.uid: ?myAvatar,
+      ?effectiveRecipientId: ?peerAvatar,
+    };
+
     final snippet = caption != null && caption.isNotEmpty ? caption : 'Photo';
     final messageData = message.toMap(useServerTimestamp: true);
 
@@ -1173,6 +1286,8 @@ class FirestoreChatRepository implements IChatRepository {
         'recipientId': effectiveRecipientId,
         'name': peerName,
         'participantNames': participantNames,
+        if (participantAvatars.isNotEmpty)
+          'participantAvatars': participantAvatars,
         'createdAt': FieldValue.serverTimestamp(),
         'lastMessage': snippet,
         'previewKind': MessageKind.image.toDbString(),

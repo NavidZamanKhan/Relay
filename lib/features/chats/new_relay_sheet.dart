@@ -161,7 +161,7 @@ class _NewRelayBody extends StatelessWidget {
             return Conversation(
               id: canonicalId,
               name: rc.displayName,
-              avatarAsset: null,
+              avatarAsset: rc.avatarUrl,
               lastMessage: rc.phoneNumber.isNotEmpty
                   ? rc.phoneNumber
                   : (rc.about ?? 'On Relay'),

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:equatable/equatable.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -253,11 +254,13 @@ final class AuthBloc extends Bloc<AuthEvent, AuthState> {
     IUserRepository? userRepository,
     CryptoService? cryptoService,
     FirebaseStorage? storage,
+    FirebaseFirestore? firestore,
     bool previewAuthenticated = true,
   })  : _authRepository = authRepository,
         _userRepository = userRepository,
         _cryptoService = cryptoService,
         _customStorage = storage,
+        _customFirestore = firestore,
         super(
           AuthState(
             step: previewAuthenticated ? AuthStep.complete : AuthStep.phone,
@@ -293,6 +296,8 @@ final class AuthBloc extends Bloc<AuthEvent, AuthState> {
   final CryptoService? _cryptoService;
   final FirebaseStorage? _customStorage;
   FirebaseStorage get _storage => _customStorage ?? FirebaseStorage.instance;
+  final FirebaseFirestore? _customFirestore;
+  FirebaseFirestore get _firestore => _customFirestore ?? FirebaseFirestore.instance;
   StreamSubscription<User?>? _authStateSubscription;
   Timer? _resendTimer;
   int _verificationEpoch = 0;
@@ -721,6 +726,25 @@ final class AuthBloc extends Bloc<AuthEvent, AuthState> {
       );
 
       await _userRepository.saveUserProfile(profile);
+
+      // Propagate updated name and avatar to active user chats asynchronously
+      try {
+        final chatsQuery = await _firestore
+            .collection('chats')
+            .where('participantIds', arrayContains: uid)
+            .get();
+        for (final doc in chatsQuery.docs) {
+          final updates = <String, dynamic>{
+            'participantNames.$uid': sanitizedName,
+          };
+          if (finalAvatarUrl != null) {
+            updates['participantAvatars.$uid'] = finalAvatarUrl;
+          } else {
+            updates['participantAvatars.$uid'] = FieldValue.delete();
+          }
+          doc.reference.update(updates).catchError((_) {});
+        }
+      } catch (_) {}
 
       emit(
         state.copyWith(

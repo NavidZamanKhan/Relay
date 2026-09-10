@@ -136,18 +136,37 @@ class _ConversationHeader extends StatelessWidget {
               (snapshot.data?.displayName.trim().isNotEmpty == true)
                   ? snapshot.data!.displayName.trim()
                   : contactName;
-          return _buildBar(context, displayName: liveName, isOnline: liveOnline);
+          final liveAvatar = snapshot.data?.avatarUrl ?? avatarAsset;
+          return _buildBar(
+            context,
+            displayName: liveName,
+            isOnline: liveOnline,
+            avatar: liveAvatar,
+            peerUid: effectivePeerUid,
+            about: snapshot.data?.about,
+            phoneNumber: snapshot.data?.phoneNumber,
+          );
         },
       );
     }
 
-    return _buildBar(context, displayName: contactName, isOnline: online);
+    return _buildBar(
+      context,
+      displayName: contactName,
+      isOnline: online,
+      avatar: avatarAsset,
+      peerUid: effectivePeerUid,
+    );
   }
 
   Widget _buildBar(
     BuildContext context, {
     required String displayName,
     required bool isOnline,
+    String? avatar,
+    String? peerUid,
+    String? about,
+    String? phoneNumber,
   }) {
     return Container(
       height: 64,
@@ -173,7 +192,7 @@ class _ConversationHeader extends StatelessWidget {
               type: MaterialType.transparency,
               child: RelayAvatar(
                 name: displayName,
-                asset: avatarAsset,
+                asset: avatar ?? avatarAsset,
                 online: false,
                 size: 40,
               ),
@@ -215,7 +234,15 @@ class _ConversationHeader extends StatelessWidget {
             ),
           ),
           IconButton(
-            onPressed: () => _menu(context),
+            onPressed: () => _menu(
+              context,
+              displayName: displayName,
+              avatar: avatar ?? avatarAsset,
+              isOnline: isOnline,
+              peerUid: peerUid,
+              about: about,
+              phoneNumber: phoneNumber,
+            ),
             icon: const Icon(CupertinoIcons.ellipsis, size: 22),
             tooltip: 'Conversation options',
           ),
@@ -224,7 +251,15 @@ class _ConversationHeader extends StatelessWidget {
     );
   }
 
-  void _menu(BuildContext context) {
+  void _menu(
+    BuildContext context, {
+    required String displayName,
+    required String? avatar,
+    required bool isOnline,
+    String? peerUid,
+    String? about,
+    String? phoneNumber,
+  }) {
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -241,9 +276,12 @@ class _ConversationHeader extends StatelessWidget {
                 Navigator.of(context).push(
                   RelayMotion.route(
                     ContactProfilePage(
-                      name: contactName,
-                      avatarAsset: avatarAsset,
-                      online: online,
+                      name: displayName,
+                      avatarAsset: avatar,
+                      online: isOnline,
+                      peerUid: peerUid,
+                      about: about,
+                      phoneNumber: phoneNumber,
                     ),
                   ),
                 );
