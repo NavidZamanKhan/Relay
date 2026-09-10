@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../../core/motion/relay_motion.dart';
 import '../../core/theme/relay_colors.dart';
@@ -340,70 +341,76 @@ class _AnchoredReactionOverlay extends StatelessWidget {
             child: ScaleTransition(
               scale: Tween<double>(begin: 0.45, end: 1.0).animate(curvedAnim),
               alignment: scaleAlignment,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: dark ? const Color(0xFF22242B) : Colors.white,
-                  borderRadius: BorderRadius.circular(36),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: dark ? 0.45 : 0.16),
-                      blurRadius: 18,
-                      offset: const Offset(0, 5),
+              child: Material(
+                type: MaterialType.transparency,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: dark ? const Color(0xFF22242B) : Colors.white,
+                    borderRadius: BorderRadius.circular(36),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: dark ? 0.45 : 0.16),
+                        blurRadius: 18,
+                        offset: const Offset(0, 5),
+                      ),
+                    ],
+                    border: Border.all(
+                      color: dark
+                          ? Colors.white.withValues(alpha: 0.12)
+                          : Colors.black.withValues(alpha: 0.08),
+                      width: 0.7,
                     ),
-                  ],
-                  border: Border.all(
-                    color: dark
-                        ? Colors.white.withValues(alpha: 0.12)
-                        : Colors.black.withValues(alpha: 0.08),
-                    width: 0.7,
                   ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    for (final emoji in quickReactions)
-                      GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: () {
-                          HapticFeedback.lightImpact();
-                          onReactionSelected(emoji);
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: currentReaction == emoji
-                                ? RelayColors.coral.withValues(alpha: 0.22)
-                                : Colors.transparent,
-                          ),
-                          child: Text(
-                            emoji,
-                            style: const TextStyle(fontSize: 25),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      for (final emoji in quickReactions)
+                        GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () {
+                            HapticFeedback.lightImpact();
+                            onReactionSelected(emoji);
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: currentReaction == emoji
+                                  ? RelayColors.coral.withValues(alpha: 0.22)
+                                  : Colors.transparent,
+                            ),
+                            child: Text(
+                              emoji,
+                              style: const TextStyle(
+                                fontSize: 25,
+                                decoration: TextDecoration.none,
+                              ),
+                            ),
                           ),
                         ),
+                      Container(
+                        width: 1,
+                        height: 22,
+                        color: dark ? Colors.white24 : Colors.black12,
+                        margin: const EdgeInsets.symmetric(horizontal: 3),
                       ),
-                    Container(
-                      width: 1,
-                      height: 22,
-                      color: dark ? Colors.white24 : Colors.black12,
-                      margin: const EdgeInsets.symmetric(horizontal: 3),
-                    ),
-                    IconButton(
-                      tooltip: 'More reactions',
-                      padding: const EdgeInsets.all(5),
-                      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                      icon: Icon(
-                        CupertinoIcons.plus,
-                        size: 20,
-                        color: dark ? Colors.white70 : Colors.black54,
+                      IconButton(
+                        tooltip: 'More reactions',
+                        padding: const EdgeInsets.all(5),
+                        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                        icon: Icon(
+                          CupertinoIcons.plus,
+                          size: 20,
+                          color: dark ? Colors.white70 : Colors.black54,
+                        ),
+                        onPressed: () {
+                          HapticFeedback.lightImpact();
+                          onMorePressed();
+                        },
                       ),
-                      onPressed: () {
-                        HapticFeedback.lightImpact();
-                        onMorePressed();
-                      },
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -477,11 +484,6 @@ class _ImageMessage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final imageSource = message.asset ??
-        message.imageUrl ??
-        message.imageData ??
-        'assets/images/sylhet_evening.png';
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -492,7 +494,7 @@ class _ImageMessage extends StatelessWidget {
               opaque: false,
               barrierColor: Colors.black.withValues(alpha: .92),
               pageBuilder: (_, animation, _) => _ImagePreview(
-                asset: imageSource,
+                message: message,
                 heroTag: 'shared-image-${message.id}',
               ),
               transitionsBuilder: (_, animation, _, child) =>
@@ -506,7 +508,7 @@ class _ImageMessage extends StatelessWidget {
               borderRadius: BorderRadius.circular(14),
               child: AspectRatio(
                 aspectRatio: 4 / 3,
-                child: _buildBubbleImage(imageSource),
+                child: _BubbleImage(message: message),
               ),
             ),
           ),
@@ -786,50 +788,13 @@ class WaveformPainter extends CustomPainter {
 }
 
 class _ImagePreview extends StatelessWidget {
-  const _ImagePreview({required this.asset, required this.heroTag});
-  final String asset;
-  final String heroTag;
+  const _ImagePreview({
+    required this.message,
+    required this.heroTag,
+  });
 
-  Widget _buildPreviewImage() {
-    if (asset.startsWith('http://') || asset.startsWith('https://')) {
-      return Image.network(
-        asset,
-        fit: BoxFit.contain,
-        loadingBuilder: (context, child, progress) {
-          if (progress == null) return child;
-          return const Center(
-            child: SizedBox.square(
-              dimension: 32,
-              child: CircularProgressIndicator(
-                strokeWidth: 2.5,
-                color: RelayColors.coral,
-              ),
-            ),
-          );
-        },
-        errorBuilder: (context, error, stackTrace) => const Center(
-          child: Icon(CupertinoIcons.exclamationmark_triangle, color: Colors.white70, size: 40),
-        ),
-      );
-    }
-    if (asset.startsWith('data:image') || (!asset.startsWith('/') && !asset.startsWith('assets/') && asset.length > 200)) {
-      final rawBase64 = asset.contains(',') ? asset.split(',').last : asset;
-      try {
-        final bytes = base64Decode(rawBase64);
-        return Image.memory(bytes, fit: BoxFit.contain);
-      } catch (_) {}
-    }
-    if (asset.startsWith('assets/')) {
-      return Image.asset(asset, fit: BoxFit.contain);
-    }
-    return Image.file(
-      File(asset),
-      fit: BoxFit.contain,
-      errorBuilder: (context, error, stackTrace) => const Center(
-        child: Icon(CupertinoIcons.exclamationmark_triangle, color: Colors.white70, size: 40),
-      ),
-    );
-  }
+  final RelayMessage message;
+  final String heroTag;
 
   @override
   Widget build(BuildContext context) {
@@ -844,7 +809,10 @@ class _ImagePreview extends StatelessWidget {
                 child: InteractiveViewer(
                   minScale: .8,
                   maxScale: 4,
-                  child: _buildPreviewImage(),
+                  child: _BubbleImage(
+                    message: message,
+                    fit: BoxFit.contain,
+                  ),
                 ),
               ),
             ),
@@ -867,66 +835,221 @@ class _ImagePreview extends StatelessWidget {
   }
 }
 
-Widget _buildBubbleImage(String pathOrUrl) {
-  if (pathOrUrl.startsWith('http://') || pathOrUrl.startsWith('https://')) {
-    return Image.network(
-      pathOrUrl,
-      fit: BoxFit.cover,
-      cacheWidth: 1100,
-      loadingBuilder: (context, child, progress) {
-        if (progress == null) return child;
-        return ColoredBox(
-          color: RelayColors.ink.withValues(alpha: .12),
-          child: const Center(
-            child: SizedBox.square(
-              dimension: 23,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: RelayColors.coral,
+class _BubbleImage extends StatefulWidget {
+  const _BubbleImage({
+    required this.message,
+    this.fit = BoxFit.cover,
+  });
+
+  final RelayMessage message;
+  final BoxFit fit;
+
+  @override
+  State<_BubbleImage> createState() => _BubbleImageState();
+}
+
+class _BubbleImageState extends State<_BubbleImage> {
+  String? _resolvedLocalPath;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkPersistentLocalCache();
+  }
+
+  @override
+  void didUpdateWidget(covariant _BubbleImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.message.id != widget.message.id ||
+        oldWidget.message.asset != widget.message.asset ||
+        oldWidget.message.imageUrl != widget.message.imageUrl ||
+        oldWidget.message.imageData != widget.message.imageData) {
+      _checkPersistentLocalCache();
+    }
+  }
+
+  Future<void> _checkPersistentLocalCache() async {
+    final msg = widget.message;
+    // 1. Direct asset
+    if (msg.asset != null && msg.asset!.isNotEmpty) {
+      if (msg.asset!.startsWith('assets/')) {
+        if (mounted) setState(() => _resolvedLocalPath = msg.asset);
+        return;
+      }
+      try {
+        final f = File(msg.asset!);
+        if (f.existsSync()) {
+          if (mounted) setState(() => _resolvedLocalPath = msg.asset);
+          return;
+        }
+      } catch (_) {}
+    }
+
+    // 2. Persistent document directory cache
+    try {
+      final docsDir = await getApplicationDocumentsDirectory();
+      final target = File('${docsDir.path}/relay_images/img_${msg.id}.jpg');
+      if (await target.exists() && await target.length() > 0) {
+        if (mounted) setState(() => _resolvedLocalPath = target.path);
+        return;
+      }
+    } catch (_) {}
+
+    // Fallback: If imageData is present, eagerly cache it to disk
+    if (msg.imageData != null && msg.imageData!.isNotEmpty) {
+      try {
+        final rawBase64 = msg.imageData!.contains(',')
+            ? msg.imageData!.split(',').last
+            : msg.imageData!;
+        final bytes = base64Decode(rawBase64);
+        _cacheBytesToDocsDir(msg.id, bytes);
+      } catch (_) {}
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final msg = widget.message;
+
+    // 1. If persistent local cache or existing asset path was resolved
+    if (_resolvedLocalPath != null) {
+      if (_resolvedLocalPath!.startsWith('assets/')) {
+        return Image.asset(
+          _resolvedLocalPath!,
+          fit: widget.fit,
+          cacheWidth: 1100,
+          errorBuilder: (_, _, _) => _buildFallback(msg),
+        );
+      }
+      try {
+        final file = File(_resolvedLocalPath!);
+        if (file.existsSync()) {
+          return Image.file(
+            file,
+            fit: widget.fit,
+            cacheWidth: 1100,
+            errorBuilder: (_, _, _) => _buildFallback(msg),
+          );
+        }
+      } catch (_) {}
+    }
+
+    // 2. Direct synchronous check for message.asset if it exists right now
+    if (msg.asset != null && msg.asset!.isNotEmpty) {
+      if (msg.asset!.startsWith('assets/')) {
+        return Image.asset(
+          msg.asset!,
+          fit: widget.fit,
+          cacheWidth: 1100,
+          errorBuilder: (_, _, _) => _buildFallback(msg),
+        );
+      }
+      try {
+        final file = File(msg.asset!);
+        if (file.existsSync()) {
+          return Image.file(
+            file,
+            fit: widget.fit,
+            cacheWidth: 1100,
+            errorBuilder: (_, _, _) => _buildFallback(msg),
+          );
+        }
+      } catch (_) {}
+    }
+
+    // 3. Fallback to Cloud Storage URL or inline base64
+    return _buildFallback(msg);
+  }
+
+  Widget _buildFallback(RelayMessage msg) {
+    // A. Network URL
+    if (msg.imageUrl != null &&
+        msg.imageUrl!.isNotEmpty &&
+        msg.imageUrl!.startsWith('http')) {
+      return Image.network(
+        msg.imageUrl!,
+        fit: widget.fit,
+        cacheWidth: 1100,
+        loadingBuilder: (context, child, progress) {
+          if (progress == null) {
+            _cacheBase64IfAvailable(msg);
+            return child;
+          }
+          return ColoredBox(
+            color: RelayColors.ink.withValues(alpha: .12),
+            child: const Center(
+              child: SizedBox.square(
+                dimension: 23,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: RelayColors.coral,
+                ),
               ),
             ),
-          ),
+          );
+        },
+        errorBuilder: (_, _, _) => _buildBase64OrPlaceholder(msg),
+      );
+    }
+
+    // B. Base64
+    return _buildBase64OrPlaceholder(msg);
+  }
+
+  Widget _buildBase64OrPlaceholder(RelayMessage msg) {
+    if (msg.imageData != null && msg.imageData!.isNotEmpty) {
+      try {
+        final rawBase64 = msg.imageData!.contains(',')
+            ? msg.imageData!.split(',').last
+            : msg.imageData!;
+        final bytes = base64Decode(rawBase64);
+        _cacheBytesToDocsDir(msg.id, bytes);
+        return Image.memory(
+          bytes,
+          fit: widget.fit,
+          cacheWidth: 1100,
+          errorBuilder: (_, _, _) => _buildPlaceholder(),
         );
-      },
-      errorBuilder: (context, error, stackTrace) => const ColoredBox(
-        color: RelayColors.inkSoft,
-        child: Center(
-          child: Icon(CupertinoIcons.photo, color: Colors.white70, size: 28),
-        ),
-      ),
-    );
+      } catch (_) {}
+    }
+
+    return _buildPlaceholder();
   }
-  if (pathOrUrl.startsWith('data:image') || (!pathOrUrl.startsWith('/') && !pathOrUrl.startsWith('assets/') && pathOrUrl.length > 200)) {
-    final rawBase64 = pathOrUrl.contains(',') ? pathOrUrl.split(',').last : pathOrUrl;
-    try {
-      final bytes = base64Decode(rawBase64);
-      return Image.memory(bytes, fit: BoxFit.cover, cacheWidth: 1100);
-    } catch (_) {}
-  }
-  if (pathOrUrl.startsWith('assets/')) {
-    return Image.asset(
-      pathOrUrl,
-      fit: BoxFit.cover,
-      cacheWidth: 1100,
-      errorBuilder: (context, error, stackTrace) => const ColoredBox(
-        color: RelayColors.inkSoft,
-        child: Center(
-          child: Icon(CupertinoIcons.photo, color: Colors.white70, size: 28),
-        ),
-      ),
-    );
-  }
-  return Image.file(
-    File(pathOrUrl),
-    fit: BoxFit.cover,
-    cacheWidth: 1100,
-    errorBuilder: (context, error, stackTrace) => const ColoredBox(
+
+  Widget _buildPlaceholder() {
+    return const ColoredBox(
       color: RelayColors.inkSoft,
       child: Center(
         child: Icon(CupertinoIcons.photo, color: Colors.white70, size: 28),
       ),
-    ),
-  );
+    );
+  }
+
+  void _cacheBase64IfAvailable(RelayMessage msg) {
+    if (msg.imageData != null && msg.imageData!.isNotEmpty) {
+      try {
+        final rawBase64 = msg.imageData!.contains(',')
+            ? msg.imageData!.split(',').last
+            : msg.imageData!;
+        _cacheBytesToDocsDir(msg.id, base64Decode(rawBase64));
+      } catch (_) {}
+    }
+  }
+
+  void _cacheBytesToDocsDir(String messageId, Uint8List bytes) {
+    getApplicationDocumentsDirectory().then((docsDir) async {
+      try {
+        final dir = Directory('${docsDir.path}/relay_images');
+        if (!await dir.exists()) {
+          await dir.create(recursive: true);
+        }
+        final file = File('${dir.path}/img_$messageId.jpg');
+        if (!await file.exists()) {
+          await file.writeAsBytes(bytes, flush: true);
+        }
+      } catch (_) {}
+    }).catchError((_) {});
+  }
 }
 
 class _DocumentMessage extends StatelessWidget {

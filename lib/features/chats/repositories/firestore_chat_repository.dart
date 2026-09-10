@@ -1087,21 +1087,28 @@ class FirestoreChatRepository implements IChatRepository {
       final uploadTask = await storageRef.putData(
         rawBytes,
         SettableMetadata(contentType: 'image/jpeg'),
-      ).timeout(const Duration(milliseconds: 2500));
-      downloadUrl = await uploadTask.ref.getDownloadURL().timeout(const Duration(milliseconds: 1500));
+      ).timeout(const Duration(milliseconds: 3500));
+      downloadUrl = await uploadTask.ref.getDownloadURL().timeout(const Duration(milliseconds: 2500));
     } catch (_) {
       // Resilient fallback to inline base64 if Cloud Storage times out, offline, or unprovisioned
       if (rawBytes.length < 800 * 1024) {
         imageData = base64Encode(rawBytes);
-      } else {
-        rethrow;
       }
     }
 
-    // 3. Cache local image file so sender does not re-download
+    // Always guarantee that a visual payload is present
+    if (downloadUrl == null && imageData == null && rawBytes.isNotEmpty) {
+      imageData = base64Encode(rawBytes);
+    }
+
+    // 3. Cache local image file in persistent application documents directory
     try {
-      final cacheDir = await getTemporaryDirectory();
-      final localCacheFile = File('${cacheDir.path}/img_$effectiveMessageId.jpg');
+      final docsDir = await getApplicationDocumentsDirectory();
+      final imagesDir = Directory('${docsDir.path}/relay_images');
+      if (!await imagesDir.exists()) {
+        await imagesDir.create(recursive: true);
+      }
+      final localCacheFile = File('${imagesDir.path}/img_$effectiveMessageId.jpg');
       if (localFilePath != localCacheFile.path) {
         await imageFile.copy(localCacheFile.path);
       }
@@ -1117,7 +1124,7 @@ class FirestoreChatRepository implements IChatRepository {
       text: caption,
       imageUrl: downloadUrl,
       imageData: imageData,
-      asset: localFilePath,
+      asset: null,
       delivery: DeliveryStage.sent,
       replyTo: replyTo,
     );
@@ -1217,8 +1224,12 @@ class FirestoreChatRepository implements IChatRepository {
     required String imageUrl,
     String? imageData,
   }) async {
-    final cacheDir = await getTemporaryDirectory();
-    final localCacheFile = File('${cacheDir.path}/img_$messageId.jpg');
+    final docsDir = await getApplicationDocumentsDirectory();
+    final imagesDir = Directory('${docsDir.path}/relay_images');
+    if (!await imagesDir.exists()) {
+      await imagesDir.create(recursive: true);
+    }
+    final localCacheFile = File('${imagesDir.path}/img_$messageId.jpg');
 
     // Return cached file if present and valid
     if (await localCacheFile.exists() && await localCacheFile.length() > 0) {

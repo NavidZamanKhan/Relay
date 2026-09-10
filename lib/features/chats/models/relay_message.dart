@@ -110,7 +110,8 @@ class RelayMessage extends Equatable {
       if (nonce != null) 'nonce': nonce,
       if (ephemeralPublicKey != null)
         'ephemeralPublicKey': ephemeralPublicKey,
-      if (asset != null) 'asset': asset,
+      if (asset != null && (asset!.startsWith('assets/') || !asset!.startsWith('/')))
+        'asset': asset,
       if (duration != Duration.zero)
         'durationMs': duration.inMilliseconds,
       if (waveform != null && waveform!.isNotEmpty) 'waveform': waveform,
