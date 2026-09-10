@@ -6,11 +6,13 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/gestures.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/motion/relay_motion.dart';
 import '../../core/theme/relay_colors.dart';
+import '../../core/widgets/relay_emoji_picker.dart';
 import 'chat_bloc.dart';
 import 'chat_models.dart';
 import 'relay_receipt.dart';
@@ -33,61 +35,240 @@ class MessageBubble extends StatelessWidget {
     final foreground =
         mine ? scheme.onSecondaryContainer : scheme.onSurface;
 
+    final reactionCounts = <String, int>{};
+    if (message.reactions != null) {
+      for (final r in message.reactions!.values) {
+        reactionCounts[r] = (reactionCounts[r] ?? 0) + 1;
+      }
+    }
+
     // MessageBubble itself is intentionally static. Its parent AnimatedList
     // animates only a genuinely inserted row; delivery and playback rebuilds do
     // not make the entire history slide in again.
     return Align(
       alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        constraints: BoxConstraints(
-          maxWidth:
-              MediaQuery.sizeOf(context).width *
-              (message.kind == MessageKind.image ? .72 : .79),
-        ),
-        margin: EdgeInsets.only(
-          left: mine ? 54 : 18,
-          right: mine ? 18 : 54,
-          top: grouped ? 0 : 7,
-          bottom: 4,
-        ),
-        padding: message.kind == MessageKind.image
-            ? const EdgeInsets.all(4)
-            : const EdgeInsets.fromLTRB(14, 10, 12, 8),
-        decoration: BoxDecoration(
-          color: bubbleColor,
-          borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(19),
-            topRight: const Radius.circular(19),
-            bottomLeft: Radius.circular(mine ? 19 : 5),
-            bottomRight: Radius.circular(mine ? 5 : 19),
-          ),
-          border: mine || isVoice
-              ? null
-              : Border.all(
-                  color: Theme.of(context).dividerColor.withValues(alpha: .72),
-                  width: .65,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          GestureDetector(
+            onLongPress: () => _showReactionSheet(context, message),
+            child: Container(
+              constraints: BoxConstraints(
+                maxWidth:
+                    MediaQuery.sizeOf(context).width *
+                    (message.kind == MessageKind.image ? .72 : .79),
+              ),
+              margin: EdgeInsets.only(
+                left: mine ? 54 : 18,
+                right: mine ? 18 : 54,
+                top: grouped ? 0 : 7,
+                bottom: reactionCounts.isNotEmpty ? 12 : 4,
+              ),
+              padding: message.kind == MessageKind.image
+                  ? const EdgeInsets.all(4)
+                  : const EdgeInsets.fromLTRB(14, 10, 12, 8),
+              decoration: BoxDecoration(
+                color: bubbleColor,
+                borderRadius: BorderRadius.only(
+                  topLeft: const Radius.circular(19),
+                  topRight: const Radius.circular(19),
+                  bottomLeft: Radius.circular(mine ? 19 : 5),
+                  bottomRight: Radius.circular(mine ? 5 : 19),
                 ),
-        ),
-        child: switch (message.kind) {
-          MessageKind.text => _TextMessage(
-            message: message,
-            foreground: foreground,
+                border: mine || isVoice
+                    ? null
+                    : Border.all(
+                        color: Theme.of(context).dividerColor.withValues(alpha: .72),
+                        width: .65,
+                      ),
+              ),
+              child: switch (message.kind) {
+                MessageKind.text => _TextMessage(
+                  message: message,
+                  foreground: foreground,
+                ),
+                MessageKind.image => _ImageMessage(
+                  message: message,
+                  foreground: foreground,
+                ),
+                MessageKind.voice => _VoiceMessage(
+                  message: message,
+                  foreground: foreground,
+                ),
+                MessageKind.document => _DocumentMessage(
+                  message: message,
+                  foreground: foreground,
+                ),
+              },
+            ),
           ),
-          MessageKind.image => _ImageMessage(
-            message: message,
-            foreground: foreground,
-          ),
-          MessageKind.voice => _VoiceMessage(
-            message: message,
-            foreground: foreground,
-          ),
-          MessageKind.document => _DocumentMessage(
-            message: message,
-            foreground: foreground,
-          ),
-        },
+          if (reactionCounts.isNotEmpty)
+            Positioned(
+              bottom: 0,
+              right: mine ? 24 : null,
+              left: mine ? null : 24,
+              child: GestureDetector(
+                onTap: () => _showReactionSheet(context, message),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).cardColor,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.1),
+                        blurRadius: 4,
+                        offset: const Offset(0, 1.5),
+                      ),
+                    ],
+                    border: Border.all(
+                      color: Theme.of(context).dividerColor.withValues(alpha: 0.5),
+                      width: 0.6,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      for (final entry in reactionCounts.entries)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 2),
+                          child: Text(
+                            entry.value > 1
+                                ? '${entry.key} ${entry.value}'
+                                : entry.key,
+                            style: const TextStyle(fontSize: 12.5),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
+  }
+
+  void _showReactionSheet(BuildContext context, RelayMessage message) {
+    HapticFeedback.mediumImpact();
+    final bloc = context.read<ChatBloc>();
+    final chatId = bloc.state.activeId;
+    final myId = bloc.currentUserId ?? 'me';
+    final currentReaction = message.reactions?[myId];
+
+    const quickReactions = [
+      '\u{2764}\u{FE0F}',
+      '\u{1F44D}',
+      '\u{1F602}',
+      '\u{1F62E}',
+      '\u{1F622}',
+      '\u{1F64F}',
+    ];
+
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        final dark = Theme.of(sheetContext).brightness == Brightness.dark;
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 24, left: 20, right: 20),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: dark ? const Color(0xFF22242B) : Colors.white,
+                borderRadius: BorderRadius.circular(36),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.18),
+                    blurRadius: 20,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
+                border: Border.all(
+                  color: dark
+                      ? Colors.white.withValues(alpha: 0.12)
+                      : Colors.black.withValues(alpha: 0.08),
+                  width: 0.7,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  for (final emoji in quickReactions)
+                    GestureDetector(
+                      onTap: () {
+                        HapticFeedback.lightImpact();
+                        Navigator.pop(sheetContext);
+                        bloc.add(ChatMessageReactionToggled(chatId, message.id, emoji));
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(7),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: currentReaction == emoji
+                              ? RelayColors.coral.withValues(alpha: 0.22)
+                              : Colors.transparent,
+                        ),
+                        child: Text(
+                          emoji,
+                          style: const TextStyle(fontSize: 27),
+                        ),
+                      ),
+                    ),
+                  Container(
+                    width: 1,
+                    height: 24,
+                    color: dark ? Colors.white24 : Colors.black12,
+                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                  ),
+                  IconButton(
+                    tooltip: 'More reactions',
+                    icon: Icon(
+                      CupertinoIcons.plus,
+                      size: 22,
+                      color: dark ? Colors.white70 : Colors.black54,
+                    ),
+                    onPressed: () {
+                      Navigator.pop(sheetContext);
+                      _showFullEmojiPickerForReaction(context, bloc, chatId, message);
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showFullEmojiPickerForReaction(
+    BuildContext context,
+    ChatBloc bloc,
+    String chatId,
+    RelayMessage message,
+  ) {
+    final dummyController = TextEditingController();
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (pickerContext) => SizedBox(
+        height: 340,
+        child: RelayEmojiPicker(
+          textEditingController: dummyController,
+          onEmojiSelected: (category, emoji) {
+            HapticFeedback.lightImpact();
+            Navigator.pop(pickerContext);
+            bloc.add(ChatMessageReactionToggled(chatId, message.id, emoji.emoji));
+          },
+        ),
+      ),
+    ).whenComplete(dummyController.dispose);
   }
 }
 

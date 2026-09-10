@@ -102,4 +102,13 @@ abstract interface class IChatRepository {
     required String imageUrl,
     String? imageData,
   });
+
+  /// Sets or removes an emoji reaction on a message in [chatId].
+  /// If [reaction] is null, removes the user's reaction.
+  Future<void> setMessageReaction({
+    required String chatId,
+    required String messageId,
+    required String userId,
+    required String? reaction,
+  });
 }

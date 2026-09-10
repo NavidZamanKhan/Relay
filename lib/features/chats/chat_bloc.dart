@@ -135,6 +135,15 @@ final class ChatImagePicked extends ChatEvent {
   List<Object?> get props => [filePath, caption];
 }
 
+final class ChatMessageReactionToggled extends ChatEvent {
+  const ChatMessageReactionToggled(this.chatId, this.messageId, this.reaction);
+  final String chatId;
+  final String messageId;
+  final String reaction;
+  @override
+  List<Object?> get props => [chatId, messageId, reaction];
+}
+
 final class ChatDeliveryAdvanced extends ChatEvent {
   const ChatDeliveryAdvanced(this.chatId, this.messageId, this.stage);
   final String chatId, messageId;
@@ -738,6 +747,40 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
           asset: localPath,
         ),
       );
+    });
+    on<ChatMessageReactionToggled>((e, emit) async {
+      final userId = _currentUserId ?? 'me';
+      final thread = state.threads[e.chatId];
+      if (thread == null) return;
+
+      final message = thread.where((m) => m.id == e.messageId).firstOrNull;
+      final isRemoving = message?.reactions?[userId] == e.reaction;
+
+      final updatedThread = thread.map((m) {
+        if (m.id != e.messageId) return m;
+        final currentReactions = {...?m.reactions};
+        if (isRemoving) {
+          currentReactions.remove(userId);
+        } else {
+          currentReactions[userId] = e.reaction;
+        }
+        return m.copyWith(reactions: currentReactions);
+      }).toList();
+
+      emit(state.copyWith(
+        threads: {...state.threads, e.chatId: updatedThread},
+      ));
+
+      if (_chatRepository != null && _currentUserId != null) {
+        try {
+          await _chatRepository.setMessageReaction(
+            chatId: e.chatId,
+            messageId: e.messageId,
+            userId: userId,
+            reaction: isRemoving ? null : e.reaction,
+          );
+        } catch (_) {}
+      }
     });
     on<ChatDeliveryAdvanced>((e, emit) {
       final thread = state.threads[e.chatId];

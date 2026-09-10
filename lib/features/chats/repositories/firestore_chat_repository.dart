@@ -1231,4 +1231,32 @@ class FirestoreChatRepository implements IChatRepository {
     await localCacheFile.writeAsBytes(imageBytes, flush: true);
     return localCacheFile.path;
   }
+
+  @override
+  Future<void> setMessageReaction({
+    required String chatId,
+    required String messageId,
+    required String userId,
+    required String? reaction,
+  }) async {
+    String effectiveChatId = chatId;
+    if (!effectiveChatId.startsWith('chat_') && !effectiveChatId.startsWith('group_')) {
+      final user = _auth.currentUser;
+      if (user != null) {
+        final sorted = [user.uid, effectiveChatId]..sort();
+        effectiveChatId = 'chat_${sorted[0]}_${sorted[1]}';
+      }
+    }
+
+    final messageRef = _chatsCollection
+        .doc(effectiveChatId)
+        .collection('messages')
+        .doc(messageId);
+
+    if (reaction != null && reaction.isNotEmpty) {
+      await messageRef.update({'reactions.$userId': reaction});
+    } else {
+      await messageRef.update({'reactions.$userId': FieldValue.delete()});
+    }
+  }
 }

@@ -23,6 +23,7 @@ class RelayMessage extends Equatable {
     this.audioData,
     this.imageUrl,
     this.imageData,
+    this.reactions,
     this.isMine = false,
     this.delivery = DeliveryStage.read,
     this.replyTo,
@@ -44,6 +45,7 @@ class RelayMessage extends Equatable {
   final String? audioData;
   final String? imageUrl;
   final String? imageData;
+  final Map<String, String>? reactions;
   final bool isMine;
   final DeliveryStage delivery;
   final String? replyTo;
@@ -65,6 +67,7 @@ class RelayMessage extends Equatable {
     String? audioData,
     String? imageUrl,
     String? imageData,
+    Map<String, String>? reactions,
     bool? isMine,
     DeliveryStage? delivery,
     String? replyTo,
@@ -86,6 +89,7 @@ class RelayMessage extends Equatable {
         audioData: audioData ?? this.audioData,
         imageUrl: imageUrl ?? this.imageUrl,
         imageData: imageData ?? this.imageData,
+        reactions: reactions ?? this.reactions,
         isMine: isMine ?? this.isMine,
         delivery: delivery ?? this.delivery,
         replyTo: replyTo ?? this.replyTo,
@@ -114,6 +118,7 @@ class RelayMessage extends Equatable {
       if (audioData != null) 'audioData': audioData,
       if (imageUrl != null) 'imageUrl': imageUrl,
       if (imageData != null) 'imageData': imageData,
+      if (reactions != null && reactions!.isNotEmpty) 'reactions': reactions,
       if (replyTo != null) 'replyTo': replyTo,
     };
   }
@@ -150,6 +155,14 @@ class RelayMessage extends Equatable {
     final imageUrl = map['imageUrl'] as String?;
     final imageData = map['imageData'] as String?;
 
+    final rawReactions = map['reactions'];
+    Map<String, String>? reactions;
+    if (rawReactions is Map) {
+      reactions = rawReactions.map(
+        (key, value) => MapEntry(key.toString(), value.toString()),
+      );
+    }
+
     return RelayMessage(
       id: id,
       senderId: sender,
@@ -167,6 +180,7 @@ class RelayMessage extends Equatable {
       audioData: audioData,
       imageUrl: imageUrl,
       imageData: imageData,
+      reactions: reactions,
       isMine: currentUserId != null ? (sender == currentUserId) : false,
       delivery: delivery,
       replyTo: map['replyTo'] as String?,
@@ -191,6 +205,7 @@ class RelayMessage extends Equatable {
         audioData,
         imageUrl,
         imageData,
+        reactions,
         isMine,
         delivery,
         replyTo,

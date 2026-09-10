@@ -114,6 +114,14 @@ class MockChatRepository implements IChatRepository {
     required String imageUrl,
     String? imageData,
   }) async => imageUrl;
+
+  @override
+  Future<void> setMessageReaction({
+    required String chatId,
+    required String messageId,
+    required String userId,
+    required String? reaction,
+  }) async {}
 }
 
 void main() {
