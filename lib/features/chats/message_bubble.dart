@@ -1271,50 +1271,73 @@ class _ReplyPreview extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(10, 6, 8, 6),
+      margin: const EdgeInsets.only(bottom: 6),
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: .07),
         borderRadius: BorderRadius.circular(10),
-        border: const Border(
-          left: BorderSide(color: RelayColors.coral, width: 2.5),
+        border: Border.all(
+          color: foreground.withValues(alpha: .12),
+          width: .6,
         ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                CupertinoIcons.reply,
-                size: 11,
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ClipRRect(
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(9),
+                bottomLeft: Radius.circular(9),
+              ),
+              child: Container(
+                width: 3,
                 color: RelayColors.coral,
               ),
-              SizedBox(width: 4),
-              Text(
-                'Reply',
-                style: TextStyle(
-                  color: RelayColors.coral,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
+            ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 5, 8, 5),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            CupertinoIcons.reply,
+                            size: 11,
+                            color: RelayColors.coral,
+                          ),
+                          SizedBox(width: 4),
+                          Text(
+                            'Reply',
+                            style: TextStyle(
+                              color: RelayColors.coral,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        replyTo,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: foreground.withValues(alpha: .85),
+                          fontSize: 12.5,
+                          height: 1.25,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 2),
-          Text(
-            replyTo,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: foreground.withValues(alpha: .8),
-              fontSize: 12.5,
-              height: 1.25,
-            ),
-          ),
-        ],
-      ),
+        ),
     );
   }
 }

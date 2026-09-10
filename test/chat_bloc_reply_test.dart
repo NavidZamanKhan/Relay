@@ -120,8 +120,6 @@ class MockChatRepository implements IChatRepository {
     required String messageId,
     required String imageUrl,
     String? imageData,
-    required String peerPublicKey,
-    required String nonce,
   }) async => imageUrl;
 
   @override

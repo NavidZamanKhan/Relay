@@ -165,9 +165,11 @@ class _MessageComposerState extends State<MessageComposer>
                 AnimatedSize(
                   duration: RelayMotion.quick,
                   curve: Curves.easeOutCubic,
+                  alignment: Alignment.bottomCenter,
                   child: state.replyingTo != null
                       ? _QuotedReplyBar(
                           replyingTo: state.replyingTo!,
+                          contactName: widget.contactName,
                           onDismiss: () => context.read<ChatBloc>().add(
                             const ChatReplyTargetSet(null),
                           ),
@@ -675,10 +677,12 @@ class _AttachmentTile extends StatelessWidget {
 class _QuotedReplyBar extends StatelessWidget {
   const _QuotedReplyBar({
     required this.replyingTo,
+    required this.contactName,
     required this.onDismiss,
   });
 
   final RelayMessage replyingTo;
+  final String contactName;
   final VoidCallback onDismiss;
 
   @override
@@ -699,82 +703,121 @@ class _QuotedReplyBar extends StatelessWidget {
       MessageKind.text => null,
     };
 
+    final title = isMine
+        ? 'Replying to yourself'
+        : (contactName.trim().isNotEmpty
+            ? 'Replying to ${contactName.trim()}'
+            : 'Replying to message');
+
+    final dark = Theme.of(context).brightness == Brightness.dark;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.fromLTRB(12, 6, 6, 6),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border(
-          left: const BorderSide(color: RelayColors.coral, width: 3),
-          top: BorderSide(
-            color: Theme.of(context).dividerColor.withValues(alpha: .5),
-            width: .6,
-          ),
-          right: BorderSide(
-            color: Theme.of(context).dividerColor.withValues(alpha: .5),
-            width: .6,
-          ),
-          bottom: BorderSide(
-            color: Theme.of(context).dividerColor.withValues(alpha: .5),
-            width: .6,
-          ),
+        border: Border.all(
+          color: Theme.of(context).dividerColor.withValues(alpha: .5),
+          width: .7,
         ),
-      ),
-      child: Row(
-        children: [
-          const Icon(
-            CupertinoIcons.reply,
-            size: 15,
-            color: RelayColors.coral,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  isMine ? 'Replying to yourself' : 'Replying to message',
-                  style: const TextStyle(
-                    color: RelayColors.coral,
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Row(
-                  children: [
-                    if (mediaIcon != null) ...[
-                      Icon(mediaIcon, size: 13, color: RelayColors.inkSoft),
-                      const SizedBox(width: 4),
-                    ],
-                    Expanded(
-                      child: Text(
-                        snippet,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: Theme.of(context).textTheme.bodySmall?.color,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          IconButton(
-            tooltip: 'Cancel reply',
-            icon: const Icon(CupertinoIcons.xmark, size: 16),
-            onPressed: onDismiss,
-            visualDensity: VisualDensity.compact,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: dark ? .18 : .04),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
           ),
         ],
       ),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ClipRRect(
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(11),
+                bottomLeft: Radius.circular(11),
+              ),
+              child: Container(
+                width: 3.5,
+                color: RelayColors.coral,
+              ),
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(10, 7, 4, 7),
+                child: Row(
+                    children: [
+                      const Icon(
+                        CupertinoIcons.reply,
+                        size: 15,
+                        color: RelayColors.coral,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: RelayColors.coral,
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Row(
+                              children: [
+                                if (mediaIcon != null) ...[
+                                  Icon(
+                                    mediaIcon,
+                                    size: 13,
+                                    color: dark
+                                        ? RelayColors.moonMuted
+                                        : RelayColors.inkSoft,
+                                  ),
+                                  const SizedBox(width: 4),
+                                ],
+                                Expanded(
+                                  child: Text(
+                                    snippet,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.color,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Cancel reply',
+                        icon: const Icon(CupertinoIcons.xmark, size: 16),
+                        onPressed: onDismiss,
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 32,
+                          minHeight: 32,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
     );
   }
 }
