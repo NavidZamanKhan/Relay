@@ -7,6 +7,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../core/motion/relay_motion.dart';
 import '../../core/theme/relay_colors.dart';
+import '../../core/widgets/relay_emoji_picker.dart';
 import 'chat_bloc.dart';
 import 'chat_models.dart';
 
@@ -37,6 +38,7 @@ class _MessageComposerState extends State<MessageComposer>
   final _finger = ValueNotifier<Offset>(Offset.zero);
   late final ChatBloc _bloc;
   bool _resolved = false;
+  bool _emojiPickerOpen = false;
   @override
   void initState() {
     super.initState();
@@ -68,12 +70,28 @@ class _MessageComposerState extends State<MessageComposer>
     _bloc.add(const ChatTextSent());
     _text.clear();
     HapticFeedback.selectionClick();
-    _focus.requestFocus();
+    if (!_emojiPickerOpen) {
+      _focus.requestFocus();
+    }
+  }
+
+  void _toggleEmojiPicker() {
+    setState(() {
+      _emojiPickerOpen = !_emojiPickerOpen;
+      if (_emojiPickerOpen) {
+        _focus.unfocus();
+      } else {
+        _focus.requestFocus();
+      }
+    });
   }
 
   void _start(LongPressStartDetails d) {
     if (_bloc.state.composerText.trim().isNotEmpty || _bloc.state.isRecording) {
       return;
+    }
+    if (_emojiPickerOpen) {
+      setState(() => _emojiPickerOpen = false);
     }
     _resolved = false;
     _finger.value = Offset.zero;
@@ -121,7 +139,7 @@ class _MessageComposerState extends State<MessageComposer>
           12,
           9,
           12,
-          8 + MediaQuery.paddingOf(context).bottom,
+          _emojiPickerOpen ? 0 : (8 + MediaQuery.paddingOf(context).bottom),
         ),
         decoration: BoxDecoration(
           color: Theme.of(context).scaffoldBackgroundColor,
@@ -147,6 +165,9 @@ class _MessageComposerState extends State<MessageComposer>
                           _resolved = true;
                           _bloc.add(const ChatRecordingCancelled());
                         } else {
+                          if (_emojiPickerOpen) {
+                            setState(() => _emojiPickerOpen = false);
+                          }
                           _attachments(context);
                         }
                       },
@@ -206,8 +227,18 @@ class _MessageComposerState extends State<MessageComposer>
                                 focusNode: _focus,
                                 minLines: 1,
                                 maxLines: 5,
+                                keyboardType: TextInputType.multiline,
+                                textInputAction: TextInputAction.newline,
+                                enableSuggestions: true,
+                                autocorrect: true,
+                                enableInteractiveSelection: true,
                                 textCapitalization:
                                     TextCapitalization.sentences,
+                                onTap: () {
+                                  if (_emojiPickerOpen) {
+                                    setState(() => _emojiPickerOpen = false);
+                                  }
+                                },
                                 onChanged: (v) =>
                                     _bloc.add(ChatComposerChanged(v)),
                                 style: const TextStyle(
@@ -219,6 +250,23 @@ class _MessageComposerState extends State<MessageComposer>
                                   contentPadding: const EdgeInsets.symmetric(
                                     horizontal: 16,
                                     vertical: 12,
+                                  ),
+                                  suffixIcon: IconButton(
+                                    tooltip: _emojiPickerOpen
+                                        ? 'Show keyboard'
+                                        : 'Show emojis',
+                                    onPressed: _toggleEmojiPicker,
+                                    icon: Icon(
+                                      _emojiPickerOpen
+                                          ? CupertinoIcons.keyboard
+                                          : CupertinoIcons.smiley,
+                                      size: 21,
+                                      color: _emojiPickerOpen
+                                          ? RelayColors.coral
+                                          : Theme.of(context)
+                                              .colorScheme
+                                              .onSurfaceVariant,
+                                    ),
                                   ),
                                   border: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(24),
@@ -234,8 +282,9 @@ class _MessageComposerState extends State<MessageComposer>
                                   ),
                                   focusedBorder: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(24),
-                                    borderSide: BorderSide(
-                                      color: Theme.of(context).dividerColor,
+                                    borderSide: const BorderSide(
+                                      color: RelayColors.coral,
+                                      width: 1.5,
                                     ),
                                   ),
                                 ),
@@ -333,6 +382,25 @@ class _MessageComposerState extends State<MessageComposer>
                           ),
                         )
                       : const SizedBox(width: double.infinity),
+                ),
+                AnimatedSwitcher(
+                  duration: RelayMotion.duration(context, RelayMotion.quick),
+                  child: _emojiPickerOpen
+                      ? Column(
+                          key: const ValueKey('relay-emoji-picker-container'),
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const SizedBox(height: 6),
+                            RelayEmojiPicker(
+                              textEditingController: _text,
+                              onEmojiSelected: (category, emoji) =>
+                                  _bloc.add(ChatComposerChanged(_text.text)),
+                              onBackspacePressed: () =>
+                                  _bloc.add(ChatComposerChanged(_text.text)),
+                            ),
+                          ],
+                        )
+                      : const SizedBox.shrink(),
                 ),
               ],
             ),
