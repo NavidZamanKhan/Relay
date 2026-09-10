@@ -22,12 +22,14 @@ class MessageBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final scheme = Theme.of(context).colorScheme;
     final mine = message.isMine;
+    final isVoice = message.kind == MessageKind.voice;
     final bubbleColor = mine
-        ? (isDark ? RelayColors.coralNight : RelayColors.coralWash)
-        : Theme.of(context).colorScheme.surface;
-    final foreground = Theme.of(context).colorScheme.onSurface;
+        ? scheme.secondaryContainer
+        : (isVoice ? scheme.surfaceContainerHigh : scheme.surface);
+    final foreground =
+        mine ? scheme.onSecondaryContainer : scheme.onSurface;
 
     // MessageBubble itself is intentionally static. Its parent AnimatedList
     // animates only a genuinely inserted row; delivery and playback rebuilds do
@@ -57,7 +59,7 @@ class MessageBubble extends StatelessWidget {
             bottomLeft: Radius.circular(mine ? 19 : 5),
             bottomRight: Radius.circular(mine ? 5 : 19),
           ),
-          border: mine
+          border: mine || isVoice
               ? null
               : Border.all(
                   color: Theme.of(context).dividerColor.withValues(alpha: .72),
@@ -235,6 +237,7 @@ class _VoiceMessage extends StatelessWidget {
           a.voiceSpeed != b.voiceSpeed ||
           a.voicePaused != b.voicePaused,
       builder: (context, state) {
+        final scheme = Theme.of(context).colorScheme;
         final selected = state.playingMessageId == message.id;
         final playing = selected && !state.voicePaused;
         final progress = selected ? state.voiceProgress : 0.0;
@@ -252,8 +255,8 @@ class _VoiceMessage extends StatelessWidget {
                     child: Container(
                       width: 42,
                       height: 42,
-                      decoration: const BoxDecoration(
-                        color: RelayColors.coral,
+                      decoration: BoxDecoration(
+                        color: scheme.primary,
                         shape: BoxShape.circle,
                       ),
                       child: Semantics(
@@ -263,7 +266,7 @@ class _VoiceMessage extends StatelessWidget {
                           child: SizedBox.square(
                             dimension: 20,
                             child: CustomPaint(
-                              painter: _PlaybackGlyph(playing),
+                              painter: _PlaybackGlyph(playing, scheme.onPrimary),
                             ),
                           ),
                         ),
@@ -303,8 +306,12 @@ class _VoiceMessage extends StatelessWidget {
                               builder: (context, visualProgress, _) => CustomPaint(
                                   painter: WaveformPainter(
                                     progress: visualProgress,
-                                    active: RelayColors.coralDeep,
-                                    inactive: foreground.withValues(alpha: .27),
+                                    active: scheme.secondary,
+                                    inactive: foreground.withValues(
+                                      alpha: scheme.brightness == Brightness.dark
+                                          ? .45
+                                          : .52,
+                                    ),
                                     seed: message.id.hashCode,
                                     waveform: message.waveform,
                                   ),
@@ -672,12 +679,13 @@ class _LinkedTextState extends State<_LinkedText> {
 }
 
 class _PlaybackGlyph extends CustomPainter {
-  const _PlaybackGlyph(this.playing);
+  const _PlaybackGlyph(this.playing, this.color);
   final bool playing;
+  final Color color;
   @override
   void paint(Canvas canvas, Size size) {
     canvas.scale(size.width / 24, size.height / 24);
-    final paint = Paint()..color = RelayColors.ink;
+    final paint = Paint()..color = color;
     if (playing) {
       canvas.drawRRect(
         RRect.fromRectAndRadius(
@@ -707,5 +715,5 @@ class _PlaybackGlyph extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _PlaybackGlyph oldDelegate) =>
-      oldDelegate.playing != playing;
+      oldDelegate.playing != playing || oldDelegate.color != color;
 }

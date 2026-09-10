@@ -34,6 +34,8 @@ class RelayApp extends StatelessWidget {
                       systemNavigationBarIconBrightness: dark
                           ? Brightness.light
                           : Brightness.dark,
+                      systemNavigationBarDividerColor: Colors.transparent,
+                      systemNavigationBarContrastEnforced: false,
                     );
             return AnnotatedRegion<SystemUiOverlayStyle>(
               value: overlay,

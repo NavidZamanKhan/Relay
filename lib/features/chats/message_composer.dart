@@ -216,9 +216,6 @@ class _MessageComposerState extends State<MessageComposer>
                                 ),
                                 decoration: InputDecoration(
                                   hintText: 'Message',
-                                  fillColor: dark
-                                      ? RelayColors.nightSoft
-                                      : Colors.white,
                                   contentPadding: const EdgeInsets.symmetric(
                                     horizontal: 16,
                                     vertical: 12,

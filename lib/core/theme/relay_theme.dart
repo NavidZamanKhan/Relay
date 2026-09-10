@@ -10,6 +10,9 @@ abstract final class RelayTheme {
     final isDark = brightness == Brightness.dark;
     final background = isDark ? RelayColors.night : RelayColors.porcelain;
     final surface = isDark ? RelayColors.nightRaised : RelayColors.paper;
+    final raisedSurface = isDark
+        ? RelayColors.nightSoft
+        : RelayColors.paperRaised;
     final foreground = isDark ? RelayColors.moon : RelayColors.ink;
     final muted = isDark ? RelayColors.moonMuted : RelayColors.inkSoft;
     final line = isDark ? RelayColors.nightLine : RelayColors.line;
@@ -18,12 +21,25 @@ abstract final class RelayTheme {
       brightness: brightness,
       primary: RelayColors.coral,
       onPrimary: RelayColors.ink,
-      secondary: RelayColors.coral,
-      onSecondary: RelayColors.ink,
+      secondary: isDark ? RelayColors.coral : RelayColors.coralDeep,
+      onSecondary: isDark ? RelayColors.ink : RelayColors.paper,
+      secondaryContainer: isDark
+          ? RelayColors.coralNight
+          : RelayColors.coralWash,
+      onSecondaryContainer: foreground,
       error: const Color(0xFFE94B4B),
       onError: Colors.white,
       surface: surface,
+      surfaceContainerLowest: background,
+      surfaceContainerLow: surface,
+      surfaceContainer: surface,
+      surfaceContainerHigh: raisedSurface,
+      surfaceContainerHighest: raisedSurface,
+      surfaceTint: Colors.transparent,
       onSurface: foreground,
+      onSurfaceVariant: muted,
+      outline: line,
+      outlineVariant: line,
     );
 
     const baseRadius = BorderRadius.all(Radius.circular(16));
@@ -48,7 +64,7 @@ abstract final class RelayTheme {
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: isDark ? RelayColors.nightSoft : RelayColors.paperRaised,
+        fillColor: scheme.surfaceContainer,
         hintStyle: TextStyle(color: muted),
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 15,
@@ -68,17 +84,23 @@ abstract final class RelayTheme {
         ),
       ),
       cardTheme: CardThemeData(
-        color: surface,
+        color: scheme.surfaceContainer,
+        surfaceTintColor: Colors.transparent,
         elevation: 0,
         margin: EdgeInsets.zero,
         shape: const RoundedRectangleBorder(borderRadius: baseRadius),
       ),
       bottomSheetTheme: BottomSheetThemeData(
-        backgroundColor: surface,
+        backgroundColor: scheme.surfaceContainer,
+        modalBackgroundColor: scheme.surfaceContainer,
         surfaceTintColor: Colors.transparent,
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
+      ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: scheme.surfaceContainer,
+        surfaceTintColor: Colors.transparent,
       ),
       snackBarTheme: SnackBarThemeData(
         backgroundColor: foreground,
