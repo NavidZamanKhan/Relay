@@ -843,10 +843,10 @@ class FirestoreChatRepository implements IChatRepository {
       final uploadTask = await storageRef.putData(
         Uint8List.fromList(ciphertextBytes),
         SettableMetadata(contentType: 'application/octet-stream'),
-      );
-      downloadUrl = await uploadTask.ref.getDownloadURL();
+      ).timeout(const Duration(milliseconds: 1500));
+      downloadUrl = await uploadTask.ref.getDownloadURL().timeout(const Duration(milliseconds: 1500));
     } catch (_) {
-      // Graceful fallback to inline base64 if Cloud Storage bucket is not yet provisioned or offline
+      // Graceful fallback to inline base64 if Cloud Storage bucket is not yet provisioned, timed out, or offline
       if (ciphertextBytes.length < 500 * 1024) {
         audioData = base64Encode(ciphertextBytes);
       } else {
@@ -870,7 +870,7 @@ class FirestoreChatRepository implements IChatRepository {
       recipientId: effectiveRecipientId,
       sentAt: DateTime.now(),
       kind: MessageKind.voice,
-      encryptedPayload: audioData ?? downloadUrl ?? '[Voice message]',
+      encryptedPayload: '[Voice message]',
       audioUrl: downloadUrl,
       audioData: audioData,
       waveform: waveform,
@@ -998,10 +998,10 @@ class FirestoreChatRepository implements IChatRepository {
       try {
         if (audioUrl.startsWith('gs://') || !audioUrl.startsWith('http')) {
           final storageRef = _storage.ref(audioUrl);
-          ciphertextBytes = await storageRef.getData();
+          ciphertextBytes = await storageRef.getData().timeout(const Duration(milliseconds: 2000));
         } else {
           final storageRef = _storage.refFromURL(audioUrl);
-          ciphertextBytes = await storageRef.getData();
+          ciphertextBytes = await storageRef.getData().timeout(const Duration(milliseconds: 2000));
         }
       } catch (_) {}
     }

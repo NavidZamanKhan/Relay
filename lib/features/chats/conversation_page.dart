@@ -172,7 +172,7 @@ class _ConversationHeader extends StatelessWidget {
             child: RelayAvatar(
               name: displayName,
               asset: avatarAsset,
-              online: isOnline,
+              online: false,
               size: 40,
             ),
           ),

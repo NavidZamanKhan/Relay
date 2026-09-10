@@ -94,7 +94,7 @@ class _ChatListPageState extends State<ChatListPage> {
                     hintText: 'Search messages or people',
                     fillColor: dark
                         ? RelayColors.nightSoft
-                        : const Color(0xFFEEEFEA),
+                        : RelayColors.paperRaised,
                     prefixIcon: const Icon(CupertinoIcons.search, size: 19),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(15),

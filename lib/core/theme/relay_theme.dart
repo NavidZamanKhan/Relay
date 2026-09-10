@@ -20,9 +20,9 @@ abstract final class RelayTheme {
     final scheme = ColorScheme(
       brightness: brightness,
       primary: RelayColors.coral,
-      onPrimary: RelayColors.ink,
+      onPrimary: Colors.white,
       secondary: isDark ? RelayColors.coral : RelayColors.coralDeep,
-      onSecondary: isDark ? RelayColors.ink : RelayColors.paper,
+      onSecondary: isDark ? RelayColors.night : RelayColors.paper,
       secondaryContainer: isDark
           ? RelayColors.coralNight
           : RelayColors.coralWash,
@@ -31,10 +31,10 @@ abstract final class RelayTheme {
       onError: Colors.white,
       surface: surface,
       surfaceContainerLowest: background,
-      surfaceContainerLow: surface,
+      surfaceContainerLow: isDark ? const Color(0xFF13191F) : const Color(0xFFFAFBFC),
       surfaceContainer: surface,
       surfaceContainerHigh: raisedSurface,
-      surfaceContainerHighest: raisedSurface,
+      surfaceContainerHighest: isDark ? const Color(0xFF2C3740) : const Color(0xFFDFE4EB),
       surfaceTint: Colors.transparent,
       onSurface: foreground,
       onSurfaceVariant: muted,
