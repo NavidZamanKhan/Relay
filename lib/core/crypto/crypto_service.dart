@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
@@ -210,6 +211,62 @@ class CryptoService {
   Future<bool> hasLocalPrivateKey() async {
     final priv = await _storage.read(key: _privateKeyKey);
     return priv != null && priv.trim().isNotEmpty;
+  }
+
+  /// Computes a deterministic 30-digit safety number (in 6 blocks of 5 digits)
+  /// between two public keys for out-of-band cryptographic verification.
+  static Future<String> computeSafetyNumber(String keyA, String keyB) async {
+    final cleanedA = keyA.trim();
+    final cleanedB = keyB.trim();
+    if (cleanedA.isEmpty || cleanedB.isEmpty) {
+      return '00000 00000 00000 00000 00000 00000';
+    }
+    final sorted = [cleanedA, cleanedB]..sort();
+    final seed = utf8.encode('relay.safety_number.v1:${sorted[0]}:${sorted[1]}');
+    final digest = await Sha256().hash(seed);
+    final bytes = digest.bytes;
+    final buffer = StringBuffer();
+    for (var i = 0; i < 6; i++) {
+      final val = (bytes[i * 4] << 24) |
+          (bytes[i * 4 + 1] << 16) |
+          (bytes[i * 4 + 2] << 8) |
+          bytes[i * 4 + 3];
+      final numStr = (val.abs() % 100000).toString().padLeft(5, '0');
+      if (i > 0) buffer.write(' ');
+      buffer.write(numStr);
+    }
+    return buffer.toString();
+  }
+
+  /// Formats a base64 public key into a 16-character grouped hex fingerprint.
+  static String formatKeyFingerprint(String publicKeyBase64) {
+    if (publicKeyBase64.trim().isEmpty) return 'None';
+    try {
+      final bytes = base64Decode(publicKeyBase64.trim());
+      final hex = bytes
+          .take(8)
+          .map((b) => b.toRadixString(16).padLeft(2, '0'))
+          .join('')
+          .toUpperCase();
+      return '${hex.substring(0, 4)} ${hex.substring(4, 8)} ${hex.substring(8, 12)} ${hex.substring(12, 16)}';
+    } catch (_) {
+      return publicKeyBase64.substring(0, math.min(12, publicKeyBase64.length));
+    }
+  }
+
+  /// Regenerates a fresh X25519 keypair, overwriting secure storage.
+  Future<String> regenerateKeypair() async {
+    final keyPair = await _algorithm.newKeyPair();
+    final privateBytes = await keyPair.extractPrivateKeyBytes();
+    final publicKey = await keyPair.extractPublicKey();
+
+    final pubBase64 = base64Encode(publicKey.bytes);
+    final privBase64 = base64Encode(privateBytes);
+
+    await _storage.write(key: _publicKeyKey, value: pubBase64);
+    await _storage.write(key: _privateKeyKey, value: privBase64);
+
+    return pubBase64;
   }
 
   /// Derives a 256-bit vault key tied to the user authenticated UID.

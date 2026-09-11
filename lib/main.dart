@@ -29,6 +29,7 @@ Future<void> main() async {
       providers: [
         RepositoryProvider<IChatRepository>.value(value: chatRepository),
         RepositoryProvider<IUserRepository>.value(value: userRepository),
+        RepositoryProvider<CryptoService>.value(value: cryptoService),
       ],
       child: MultiBlocProvider(
         providers: [

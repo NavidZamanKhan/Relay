@@ -102,6 +102,18 @@ final class AuthErrorDismissed extends AuthEvent {
   const AuthErrorDismissed();
 }
 
+final class AuthKeyRegenerated extends AuthEvent {
+  const AuthKeyRegenerated();
+}
+
+final class AuthKeyVaultRestored extends AuthEvent {
+  const AuthKeyVaultRestored(this.vaultJson);
+  final String vaultJson;
+
+  @override
+  List<Object?> get props => [vaultJson];
+}
+
 // Internal package events for Firebase callbacks
 final class _AuthCodeSent extends AuthEvent {
   const _AuthCodeSent(this.verificationId, this.resendToken);
@@ -282,6 +294,8 @@ final class AuthBloc extends Bloc<AuthEvent, AuthState> {
     on<AuthRestarted>(_onRestarted);
     on<AuthSignOutRequested>(_onSignOutRequested);
     on<AuthErrorDismissed>(_onErrorDismissed);
+    on<AuthKeyRegenerated>(_onKeyRegenerated);
+    on<AuthKeyVaultRestored>(_onKeyVaultRestored);
     on<_AuthUserChanged>(_onUserChanged);
 
     if (_authRepository != null && !previewAuthenticated) {
@@ -929,6 +943,53 @@ final class AuthBloc extends Bloc<AuthEvent, AuthState> {
         } catch (_) {}
       }
       return profile.publicKey;
+    }
+  }
+
+  Future<void> _onKeyRegenerated(
+    AuthKeyRegenerated event,
+    Emitter<AuthState> emit,
+  ) async {
+    if (_cryptoService == null) return;
+    try {
+      final newPub = await _cryptoService.regenerateKeypair();
+      emit(state.copyWith(publicKey: newPub));
+      final uid = state.userId ?? _authRepository?.currentUser?.uid;
+      if (uid != null && uid.isNotEmpty) {
+        final vault = await _cryptoService.exportEncryptedKeyVault(uid);
+        final profile = await _userRepository?.getUserProfile(uid);
+        if (profile != null) {
+          await _userRepository?.saveUserProfile(
+            profile.copyWith(publicKey: newPub, encryptedKeyVault: vault),
+          );
+        }
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _onKeyVaultRestored(
+    AuthKeyVaultRestored event,
+    Emitter<AuthState> emit,
+  ) async {
+    if (_cryptoService == null) return;
+    try {
+      final uid = state.userId ?? _authRepository?.currentUser?.uid ?? 'local_user';
+      final restoredPub = await _cryptoService.importEncryptedKeyVault(
+        encryptedVault: event.vaultJson,
+        uid: uid,
+      );
+      emit(state.copyWith(publicKey: restoredPub));
+      final profile = await _userRepository?.getUserProfile(uid);
+      if (profile != null) {
+        await _userRepository?.saveUserProfile(
+          profile.copyWith(
+            publicKey: restoredPub,
+            encryptedKeyVault: event.vaultJson,
+          ),
+        );
+      }
+    } catch (_) {
+      rethrow;
     }
   }
 

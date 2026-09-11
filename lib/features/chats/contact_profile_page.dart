@@ -1,11 +1,14 @@
+import 'dart:convert';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../core/theme/relay_colors.dart';
 import '../../core/widgets/relay_avatar.dart';
+import '../auth/auth_bloc.dart';
 import '../auth/models/user_profile.dart';
 import '../auth/repositories/i_user_repository.dart';
 import 'chat_bloc.dart';
+import 'widgets/safety_number_sheet.dart';
 
 class ContactProfilePage extends StatelessWidget {
   const ContactProfilePage({
@@ -73,6 +76,7 @@ class ContactProfilePage extends StatelessWidget {
             online: liveOnline,
             about: liveAbout,
             phoneNumber: livePhone,
+            publicKey: profile?.publicKey ?? '',
           );
         },
       );
@@ -94,6 +98,7 @@ class ContactProfilePage extends StatelessWidget {
       online: online,
       about: fallbackAbout,
       phoneNumber: fallbackPhone,
+      publicKey: '',
     );
   }
 
@@ -104,6 +109,7 @@ class ContactProfilePage extends StatelessWidget {
     required bool online,
     required String about,
     required String phoneNumber,
+    required String publicKey,
   }) => Scaffold(
     appBar: AppBar(
       leading: IconButton(
@@ -176,6 +182,73 @@ class ContactProfilePage extends StatelessWidget {
                 ),
               ],
             ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        Material(
+          color: Theme.of(context).colorScheme.surface,
+          borderRadius: BorderRadius.circular(18),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(18),
+            onTap: () {
+              final authState = context.read<AuthBloc>().state;
+              final myPub = (authState.publicKey != null &&
+                      authState.publicKey!.trim().isNotEmpty)
+                  ? authState.publicKey!.trim()
+                  : base64Encode(utf8.encode('relay_local_user_key'));
+              final peerPub = (publicKey.trim().isNotEmpty)
+                  ? publicKey.trim()
+                  : base64Encode(
+                      utf8.encode('relay_${name.toLowerCase().replaceAll(' ', '_')}'),
+                    );
+
+              SafetyNumberSheet.show(
+                context,
+                peerName: name,
+                myPublicKey: myPub,
+                peerPublicKey: peerPub,
+              );
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: Theme.of(context).dividerColor),
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    CupertinoIcons.lock_shield_fill,
+                    color: RelayColors.mint,
+                    size: 24,
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Encryption',
+                          style: TextStyle(
+                            fontSize: 14.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'End-to-end encrypted. Tap to verify security code.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Icon(CupertinoIcons.chevron_right, size: 14),
+                ],
+              ),
+            ),
           ),
         ),
         const SizedBox(height: 12),

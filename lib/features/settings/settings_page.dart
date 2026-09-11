@@ -9,6 +9,7 @@ import '../../core/widgets/relay_avatar.dart';
 import '../../core/widgets/relay_button.dart';
 import '../auth/auth_bloc.dart';
 import '../auth/profile_setup_page.dart';
+import 'views/security_settings_page.dart';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
@@ -55,19 +56,22 @@ class SettingsPage extends StatelessWidget {
           const _ThemeSelector(),
           const SizedBox(height: 20),
           const _SectionLabel('Your Relay'),
-          const _SettingsGroup(
+          _SettingsGroup(
             children: [
               _SettingsTile(
                 icon: CupertinoIcons.lock_shield,
                 title: 'Privacy & security',
-                subtitle: 'Last seen, blocked contacts, app lock',
+                subtitle: 'End-to-end encryption, key vault, and privacy',
+                onTap: () => Navigator.of(context).push(
+                  RelayMotion.route(const SecuritySettingsPage()),
+                ),
               ),
-              _SettingsTile(
+              const _SettingsTile(
                 icon: CupertinoIcons.bell,
                 title: 'Notifications',
                 subtitle: 'Messages, previews, and quiet hours',
               ),
-              _SettingsTile(
+              const _SettingsTile(
                 icon: CupertinoIcons.chat_bubble_2,
                 title: 'Chats',
                 subtitle: 'Media and automatic downloads',
