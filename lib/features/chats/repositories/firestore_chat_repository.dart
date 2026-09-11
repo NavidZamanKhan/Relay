@@ -43,6 +43,8 @@ class FirestoreChatRepository implements IChatRepository {
   final Map<String, String> _userDisplayNameCache = {};
   final Map<String, String> _userPublicKeyCache = {};
   final Map<String, String> _userAvatarCache = {};
+  final Set<String> _knownExistingChats = {};
+  String? _cachedMyPublicKey;
 
   CollectionReference<Map<String, dynamic>> get _chatsCollection =>
       _firestore.collection('chats');
@@ -68,14 +70,29 @@ class FirestoreChatRepository implements IChatRepository {
       return _userAvatarCache[uid];
     }
     try {
-      final doc = await _usersCollection.doc(uid).get();
+      final doc = await _usersCollection
+          .doc(uid)
+          .get(const GetOptions(source: Source.cache));
       final av = (doc.data()?['avatarUrl'] ?? doc.data()?['photoUrl']) as String?;
       if (av != null && av.trim().isNotEmpty) {
         final trimmed = av.trim();
         _userAvatarCache[uid] = trimmed;
         return trimmed;
       }
-    } catch (_) {}
+    } catch (_) {
+      try {
+        final doc = await _usersCollection
+            .doc(uid)
+            .get()
+            .timeout(const Duration(milliseconds: 1500));
+        final av = (doc.data()?['avatarUrl'] ?? doc.data()?['photoUrl']) as String?;
+        if (av != null && av.trim().isNotEmpty) {
+          final trimmed = av.trim();
+          _userAvatarCache[uid] = trimmed;
+          return trimmed;
+        }
+      } catch (_) {}
+    }
     return null;
   }
 
@@ -88,6 +105,7 @@ class FirestoreChatRepository implements IChatRepository {
       final conversations = <Conversation>[];
 
       for (final doc in snapshot.docs) {
+        _knownExistingChats.add(doc.id);
         final data = doc.data();
         final isGroup = (data['isGroup'] as bool?) ?? false;
         final participants = (data['participantIds'] as List<dynamic>?)
@@ -216,6 +234,7 @@ class FirestoreChatRepository implements IChatRepository {
       final sorted = [currentUserId, effectiveChatId]..sort();
       effectiveChatId = 'chat_${sorted[0]}_${sorted[1]}';
     }
+    _knownExistingChats.add(effectiveChatId);
 
     return _chatsCollection
         .doc(effectiveChatId)
@@ -317,23 +336,37 @@ class FirestoreChatRepository implements IChatRepository {
       effectiveRecipientId = parts.where((p) => p != user.uid).firstOrNull;
     }
 
-    // Resolve recipient public key: users directory is canonical source of truth
-    String effectivePublicKey = '';
-    if (effectiveRecipientId != null) {
+    // 1. Resolve recipient public key from memory cache or arguments first
+    String effectivePublicKey = recipientPublicKey.trim();
+    if (effectivePublicKey.isEmpty && effectiveRecipientId != null) {
+      effectivePublicKey = _userPublicKeyCache[effectiveRecipientId] ?? '';
+    }
+    if (effectivePublicKey.isEmpty && effectiveRecipientId != null) {
       try {
-        final peerDoc = await _usersCollection.doc(effectiveRecipientId).get();
+        final peerDoc = await _usersCollection
+            .doc(effectiveRecipientId)
+            .get(const GetOptions(source: Source.cache));
         final pub = (peerDoc.data()?['publicKey'] as String?)?.trim();
         if (pub != null && pub.isNotEmpty) {
           _userPublicKeyCache[effectiveRecipientId] = pub;
           effectivePublicKey = pub;
         }
       } catch (_) {
-        effectivePublicKey = _userPublicKeyCache[effectiveRecipientId] ?? '';
+        try {
+          final peerDoc = await _usersCollection
+              .doc(effectiveRecipientId)
+              .get()
+              .timeout(const Duration(milliseconds: 1500));
+          final pub = (peerDoc.data()?['publicKey'] as String?)?.trim();
+          if (pub != null && pub.isNotEmpty) {
+            _userPublicKeyCache[effectiveRecipientId] = pub;
+            effectivePublicKey = pub;
+          }
+        } catch (_) {}
       }
     }
-
-    if (effectivePublicKey.isEmpty) {
-      effectivePublicKey = recipientPublicKey.trim();
+    if (effectivePublicKey.isNotEmpty && effectiveRecipientId != null) {
+      _userPublicKeyCache[effectiveRecipientId] = effectivePublicKey;
     }
 
     String? ciphertext;
@@ -359,17 +392,44 @@ class FirestoreChatRepository implements IChatRepository {
     final messageRef = _chatsCollection.doc(effectiveChatId).collection('messages').doc(message.id);
     final chatRef = _chatsCollection.doc(effectiveChatId);
 
-    String currentUserName = 'Me';
-    try {
-      if (_userDisplayNameCache.containsKey(user.uid)) {
-        currentUserName = _userDisplayNameCache[user.uid]!;
-      } else {
-        final myDoc = await _usersCollection.doc(user.uid).get();
-        currentUserName =
-            (myDoc.data()?['displayName'] as String?)?.trim() ?? 'Me';
-        _userDisplayNameCache[user.uid] = currentUserName;
+    String currentUserName = _userDisplayNameCache[user.uid] ?? 'Me';
+    if (!_userDisplayNameCache.containsKey(user.uid)) {
+      _usersCollection
+          .doc(user.uid)
+          .get(const GetOptions(source: Source.cache))
+          .then((doc) {
+        final name = (doc.data()?['displayName'] as String?)?.trim();
+        if (name != null && name.isNotEmpty) {
+          _userDisplayNameCache[user.uid] = name;
+        }
+      }).catchError((_) {});
+    }
+
+    String peerName = 'Relay Contact';
+    if (effectiveRecipientId != null) {
+      final recipientId = effectiveRecipientId;
+      peerName = _userDisplayNameCache[recipientId] ?? 'Relay Contact';
+      if (!_userDisplayNameCache.containsKey(recipientId)) {
+        _usersCollection
+            .doc(recipientId)
+            .get(const GetOptions(source: Source.cache))
+            .then((doc) {
+          final name = (doc.data()?['displayName'] as String?)?.trim();
+          if (name != null && name.isNotEmpty) {
+            _userDisplayNameCache[recipientId] = name;
+          }
+        }).catchError((_) {});
       }
-    } catch (_) {}
+    }
+
+    final myAvatar = _userAvatarCache[user.uid];
+    final peerAvatar = effectiveRecipientId != null ? _userAvatarCache[effectiveRecipientId] : null;
+    if (myAvatar == null) {
+      _getOrFetchUserAvatar(user.uid).catchError((_) => null);
+    }
+    if (peerAvatar == null && effectiveRecipientId != null) {
+      _getOrFetchUserAvatar(effectiveRecipientId).catchError((_) => null);
+    }
 
     final payload = message.copyWith(
       senderId: user.uid,
@@ -380,42 +440,39 @@ class FirestoreChatRepository implements IChatRepository {
       delivery: DeliveryStage.sent,
     );
 
-    final chatDoc = await chatRef.get();
     final batch = _firestore.batch();
+    bool chatExists = _knownExistingChats.contains(effectiveChatId);
+    DocumentSnapshot<Map<String, dynamic>>? chatDoc;
 
-    String peerName = 'Relay Contact';
-    if (effectiveRecipientId != null) {
-      if (_userDisplayNameCache.containsKey(effectiveRecipientId)) {
-        peerName = _userDisplayNameCache[effectiveRecipientId]!;
-      } else {
+    if (!chatExists) {
+      try {
+        chatDoc = await chatRef.get(const GetOptions(source: Source.cache));
+        chatExists = chatDoc.exists;
+      } catch (_) {
         try {
-          final pDoc = await _usersCollection.doc(effectiveRecipientId).get();
-          peerName = (pDoc.data()?['displayName'] as String?)?.trim() ??
-              'Relay Contact';
-          _userDisplayNameCache[effectiveRecipientId] = peerName;
+          chatDoc = await chatRef.get().timeout(const Duration(milliseconds: 1500));
+          chatExists = chatDoc.exists;
         } catch (_) {}
       }
     }
 
-    final participantNames = {
-      user.uid: currentUserName,
-      ?effectiveRecipientId: peerName,
-    };
+    if (!chatExists) {
+      String myPublicKey = _cachedMyPublicKey ?? '';
+      if (myPublicKey.isEmpty) {
+        try {
+          myPublicKey = await _cryptoService.getOrCreatePublicKey();
+          if (myPublicKey.isNotEmpty) _cachedMyPublicKey = myPublicKey;
+        } catch (_) {}
+      }
 
-    final myAvatar = await _getOrFetchUserAvatar(user.uid);
-    final peerAvatar = effectiveRecipientId != null
-        ? await _getOrFetchUserAvatar(effectiveRecipientId)
-        : null;
-    final participantAvatars = {
-      user.uid: ?myAvatar,
-      ?effectiveRecipientId: ?peerAvatar,
-    };
-
-    if (!chatDoc.exists) {
-      String myPublicKey = '';
-      try {
-        myPublicKey = await _cryptoService.getOrCreatePublicKey();
-      } catch (_) {}
+      final participantNames = {
+        user.uid: currentUserName,
+        ?effectiveRecipientId: peerName,
+      };
+      final participantAvatars = {
+        user.uid: ?myAvatar,
+        ?effectiveRecipientId: ?peerAvatar,
+      };
 
       final newConvData = <String, dynamic>{
         'participantIds': [user.uid, effectiveRecipientId ?? ''],
@@ -444,55 +501,28 @@ class FirestoreChatRepository implements IChatRepository {
       batch.set(chatRef, newConvData);
       batch.set(messageRef, payload.toMap(useServerTimestamp: true));
       await batch.commit();
+      _knownExistingChats.add(effectiveChatId);
       return;
     }
+
+    // Existing chat: fast-path atomic update with zero pre-fetch
     batch.set(messageRef, payload.toMap(useServerTimestamp: true));
 
-    // Update parent conversation thread metadata
     final updateData = <String, dynamic>{
       'lastMessage': message.text ?? 'Media message',
       'previewKind': message.kind.toDbString(),
       'lastMessageAt': FieldValue.serverTimestamp(),
       'delivery': DeliveryStage.sent.toDbString(),
+      if (effectiveRecipientId != null)
+        'unreadCount.$effectiveRecipientId': FieldValue.increment(1),
+      if (effectiveRecipientId != null && effectivePublicKey.isNotEmpty)
+        'participantPublicKeys.$effectiveRecipientId': effectivePublicKey,
+      'participantAvatars.${user.uid}': ?myAvatar,
     };
 
-    final existingData = chatDoc.data();
-    if (existingData != null) {
-      if (existingData['participantNames'] == null) {
-        updateData['participantNames'] = participantNames;
-      }
-      if (myAvatar != null) {
-        final existingAvatars = existingData['participantAvatars'] as Map<dynamic, dynamic>?;
-        if (existingAvatars?[user.uid] != myAvatar) {
-          updateData['participantAvatars.${user.uid}'] = myAvatar;
-        }
-      }
-      // Synchronize recipient's public key on parent chat doc if changed or missing
-      if (effectiveRecipientId != null && effectivePublicKey.isNotEmpty) {
-        final existingKeys = existingData['participantPublicKeys'] as Map<dynamic, dynamic>?;
-        if (existingKeys?[effectiveRecipientId] != effectivePublicKey) {
-          updateData['participantPublicKeys.$effectiveRecipientId'] = effectivePublicKey;
-        }
-      }
-      // Synchronize sender's public key on parent chat doc if changed or missing
-      String myPublicKey = '';
-      try {
-        myPublicKey = await _cryptoService.getOrCreatePublicKey();
-      } catch (_) {}
-      if (myPublicKey.isNotEmpty) {
-        final existingKeys = existingData['participantPublicKeys'] as Map<dynamic, dynamic>?;
-        if (existingKeys?[user.uid] != myPublicKey) {
-          updateData['participantPublicKeys.${user.uid}'] = myPublicKey;
-        }
-      }
-    }
-
-    if (effectiveRecipientId != null) {
-      updateData['unreadCount.$effectiveRecipientId'] = FieldValue.increment(1);
-    }
-
-    batch.update(chatRef, updateData);
+    batch.set(chatRef, updateData, SetOptions(merge: true));
     await batch.commit();
+    _knownExistingChats.add(effectiveChatId);
   }
 
   @override
@@ -623,9 +653,9 @@ class FirestoreChatRepository implements IChatRepository {
     }
 
     try {
-      await _chatsCollection.doc(effectiveChatId).update({
-        'typing.$userId': isTyping,
-      });
+      await _chatsCollection.doc(effectiveChatId).set({
+        'typing': {userId: isTyping},
+      }, SetOptions(merge: true));
     } catch (_) {}
   }
 
@@ -639,6 +669,7 @@ class FirestoreChatRepository implements IChatRepository {
     // Generate canonical composite document ID: chat_{minUid}_{maxUid}
     final sorted = [currentUserId, recipientUserId]..sort();
     final canonicalId = 'chat_${sorted[0]}_${sorted[1]}';
+    _knownExistingChats.add(canonicalId);
 
     String resolvedPeerKey = '';
     if (_userPublicKeyCache.containsKey(recipientUserId)) {
@@ -995,46 +1026,42 @@ class FirestoreChatRepository implements IChatRepository {
 
     final chatRef = _chatsCollection.doc(effectiveChatId);
     final messageRef = chatRef.collection('messages').doc(effectiveMessageId);
-    final chatDoc = await chatRef.get();
     final batch = _firestore.batch();
 
-    String currentUserName = 'Me';
-    try {
-      if (_userDisplayNameCache.containsKey(user.uid)) {
-        currentUserName = _userDisplayNameCache[user.uid]!;
-      } else {
-        final myDoc = await _usersCollection.doc(user.uid).get();
-        currentUserName = (myDoc.data()?['displayName'] as String?)?.trim() ?? 'Me';
-        _userDisplayNameCache[user.uid] = currentUserName;
-      }
-    } catch (_) {}
+    String currentUserName = _userDisplayNameCache[user.uid] ?? 'Me';
+    if (!_userDisplayNameCache.containsKey(user.uid)) {
+      _usersCollection
+          .doc(user.uid)
+          .get(const GetOptions(source: Source.cache))
+          .then((doc) {
+        final name = (doc.data()?['displayName'] as String?)?.trim();
+        if (name != null && name.isNotEmpty) {
+          _userDisplayNameCache[user.uid] = name;
+        }
+      }).catchError((_) {});
+    }
 
     String peerName = 'Relay Contact';
     if (effectiveRecipientId != null) {
-      if (_userDisplayNameCache.containsKey(effectiveRecipientId)) {
-        peerName = _userDisplayNameCache[effectiveRecipientId]!;
-      } else {
-        try {
-          final pDoc = await _usersCollection.doc(effectiveRecipientId).get();
-          peerName = (pDoc.data()?['displayName'] as String?)?.trim() ?? 'Relay Contact';
-          _userDisplayNameCache[effectiveRecipientId] = peerName;
-        } catch (_) {}
+      final recipientId = effectiveRecipientId;
+      peerName = _userDisplayNameCache[recipientId] ?? 'Relay Contact';
+      if (!_userDisplayNameCache.containsKey(recipientId)) {
+        _usersCollection
+            .doc(recipientId)
+            .get(const GetOptions(source: Source.cache))
+            .then((doc) {
+          final name = (doc.data()?['displayName'] as String?)?.trim();
+          if (name != null && name.isNotEmpty) {
+            _userDisplayNameCache[recipientId] = name;
+          }
+        }).catchError((_) {});
       }
     }
 
-    final participantNames = {
-      user.uid: currentUserName,
-      ?effectiveRecipientId: peerName,
-    };
-
-    final myAvatar = await _getOrFetchUserAvatar(user.uid);
+    final myAvatar = _userAvatarCache[user.uid];
     final peerAvatar = effectiveRecipientId != null
-        ? await _getOrFetchUserAvatar(effectiveRecipientId)
+        ? _userAvatarCache[effectiveRecipientId]
         : null;
-    final participantAvatars = {
-      user.uid: ?myAvatar,
-      ?effectiveRecipientId: ?peerAvatar,
-    };
 
     final durationSeconds = duration.inSeconds;
     final durationMinutes = duration.inMinutes;
@@ -1042,11 +1069,38 @@ class FirestoreChatRepository implements IChatRepository {
     final timeStr = '$durationMinutes:${secondsRem.toString().padLeft(2, '0')}';
     final voiceSnippet = 'Voice message · $timeStr';
 
-    if (!chatDoc.exists) {
-      String myPublicKey = '';
+    bool chatExists = _knownExistingChats.contains(effectiveChatId);
+    DocumentSnapshot<Map<String, dynamic>>? chatDoc;
+
+    if (!chatExists) {
       try {
-        myPublicKey = await _cryptoService.getOrCreatePublicKey();
-      } catch (_) {}
+        chatDoc = await chatRef.get(const GetOptions(source: Source.cache));
+        chatExists = chatDoc.exists;
+      } catch (_) {
+        try {
+          chatDoc = await chatRef.get().timeout(const Duration(milliseconds: 1500));
+          chatExists = chatDoc.exists;
+        } catch (_) {}
+      }
+    }
+
+    if (!chatExists) {
+      String myPublicKey = _cachedMyPublicKey ?? '';
+      if (myPublicKey.isEmpty) {
+        try {
+          myPublicKey = await _cryptoService.getOrCreatePublicKey();
+          if (myPublicKey.isNotEmpty) _cachedMyPublicKey = myPublicKey;
+        } catch (_) {}
+      }
+
+      final participantNames = {
+        user.uid: currentUserName,
+        ?effectiveRecipientId: peerName,
+      };
+      final participantAvatars = {
+        user.uid: ?myAvatar,
+        ?effectiveRecipientId: ?peerAvatar,
+      };
 
       final newConvData = <String, dynamic>{
         'participantIds': [user.uid, effectiveRecipientId ?? ''],
@@ -1083,19 +1137,19 @@ class FirestoreChatRepository implements IChatRepository {
         'previewKind': 'voice',
         'delivery': 'sent',
         'lastMessageDelivery': 'sent',
+        if (effectiveRecipientId != null)
+          'unreadCount.$effectiveRecipientId': FieldValue.increment(1),
+        if (effectiveRecipientId != null && effectivePublicKey.isNotEmpty)
+          'participantPublicKeys.$effectiveRecipientId': effectivePublicKey,
+        'participantAvatars.${user.uid}': ?myAvatar,
       };
-      if (effectiveRecipientId != null) {
-        updateData['unreadCount.$effectiveRecipientId'] = FieldValue.increment(1);
-      }
-      if (effectiveRecipientId != null && effectivePublicKey.isNotEmpty) {
-        updateData['participantPublicKeys.$effectiveRecipientId'] = effectivePublicKey;
-      }
-      batch.update(chatRef, updateData);
+      batch.set(chatRef, updateData, SetOptions(merge: true));
     }
 
     // Keep the ordering timestamp available locally while the write is pending.
     batch.set(messageRef, message.toMap(useServerTimestamp: false));
     await batch.commit();
+    _knownExistingChats.add(effectiveChatId);
   }
 
   @override
@@ -1255,51 +1309,71 @@ class FirestoreChatRepository implements IChatRepository {
 
     final chatRef = _chatsCollection.doc(effectiveChatId);
     final messageRef = chatRef.collection('messages').doc(effectiveMessageId);
-    final chatDoc = await chatRef.get();
     final batch = _firestore.batch();
 
-    String currentUserName = 'Me';
-    try {
-      if (_userDisplayNameCache.containsKey(user.uid)) {
-        currentUserName = _userDisplayNameCache[user.uid]!;
-      } else {
-        final myDoc = await _usersCollection.doc(user.uid).get();
-        currentUserName = (myDoc.data()?['displayName'] as String?)?.trim() ?? 'Me';
-        _userDisplayNameCache[user.uid] = currentUserName;
-      }
-    } catch (_) {}
+    String currentUserName = _userDisplayNameCache[user.uid] ?? 'Me';
+    if (!_userDisplayNameCache.containsKey(user.uid)) {
+      _usersCollection
+          .doc(user.uid)
+          .get(const GetOptions(source: Source.cache))
+          .then((doc) {
+        final name = (doc.data()?['displayName'] as String?)?.trim();
+        if (name != null && name.isNotEmpty) {
+          _userDisplayNameCache[user.uid] = name;
+        }
+      }).catchError((_) {});
+    }
 
     String peerName = 'Relay Contact';
     if (effectiveRecipientId != null) {
-      if (_userDisplayNameCache.containsKey(effectiveRecipientId)) {
-        peerName = _userDisplayNameCache[effectiveRecipientId]!;
-      } else {
-        try {
-          final pDoc = await _usersCollection.doc(effectiveRecipientId).get();
-          peerName = (pDoc.data()?['displayName'] as String?)?.trim() ?? 'Relay Contact';
-          _userDisplayNameCache[effectiveRecipientId] = peerName;
-        } catch (_) {}
+      final recipientId = effectiveRecipientId;
+      peerName = _userDisplayNameCache[recipientId] ?? 'Relay Contact';
+      if (!_userDisplayNameCache.containsKey(recipientId)) {
+        _usersCollection
+            .doc(recipientId)
+            .get(const GetOptions(source: Source.cache))
+            .then((doc) {
+          final name = (doc.data()?['displayName'] as String?)?.trim();
+          if (name != null && name.isNotEmpty) {
+            _userDisplayNameCache[recipientId] = name;
+          }
+        }).catchError((_) {});
       }
     }
 
-    final participantNames = {
-      user.uid: currentUserName,
-      ?effectiveRecipientId: peerName,
-    };
-
-    final myAvatar = await _getOrFetchUserAvatar(user.uid);
+    final myAvatar = _userAvatarCache[user.uid];
     final peerAvatar = effectiveRecipientId != null
-        ? await _getOrFetchUserAvatar(effectiveRecipientId)
+        ? _userAvatarCache[effectiveRecipientId]
         : null;
-    final participantAvatars = {
-      user.uid: ?myAvatar,
-      ?effectiveRecipientId: ?peerAvatar,
-    };
 
     final snippet = caption != null && caption.isNotEmpty ? caption : 'Photo';
     final messageData = message.toMap(useServerTimestamp: true);
 
-    if (!chatDoc.exists) {
+    bool chatExists = _knownExistingChats.contains(effectiveChatId);
+    DocumentSnapshot<Map<String, dynamic>>? chatDoc;
+
+    if (!chatExists) {
+      try {
+        chatDoc = await chatRef.get(const GetOptions(source: Source.cache));
+        chatExists = chatDoc.exists;
+      } catch (_) {
+        try {
+          chatDoc = await chatRef.get().timeout(const Duration(milliseconds: 1500));
+          chatExists = chatDoc.exists;
+        } catch (_) {}
+      }
+    }
+
+    if (!chatExists) {
+      final participantNames = {
+        user.uid: currentUserName,
+        ?effectiveRecipientId: peerName,
+      };
+      final participantAvatars = {
+        user.uid: ?myAvatar,
+        ?effectiveRecipientId: ?peerAvatar,
+      };
+
       final newConvData = <String, dynamic>{
         'participantIds': [user.uid, effectiveRecipientId ?? ''],
         'participants': [user.uid, ?effectiveRecipientId],
@@ -1340,16 +1414,18 @@ class FirestoreChatRepository implements IChatRepository {
         'lastMessageSenderId': user.uid,
         'delivery': DeliveryStage.sent.toDbString(),
         'lastMessageDelivery': DeliveryStage.sent.toDbString(),
+        if (effectiveRecipientId != null) ...{
+          'unreadCount.$effectiveRecipientId': FieldValue.increment(1),
+          'unreadCounts.$effectiveRecipientId': FieldValue.increment(1),
+        },
+        'participantAvatars.${user.uid}': ?myAvatar,
       };
-      if (effectiveRecipientId != null) {
-        updateData['unreadCount.$effectiveRecipientId'] = FieldValue.increment(1);
-        updateData['unreadCounts.$effectiveRecipientId'] = FieldValue.increment(1);
-      }
-      batch.update(chatRef, updateData);
+      batch.set(chatRef, updateData, SetOptions(merge: true));
     }
 
     batch.set(messageRef, messageData);
     await batch.commit();
+    _knownExistingChats.add(effectiveChatId);
   }
 
   @override

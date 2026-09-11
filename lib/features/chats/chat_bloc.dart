@@ -868,15 +868,26 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
           return;
         }
 
-        try {
-          await _chatRepository.sendMessage(
-            chatId: effectiveChatId,
-            message: outgoing,
-            recipientPublicKey: conv?.recipientPublicKey ?? '',
-          );
-        } catch (_) {
-          emit(state.copyWith(outboxQueue: [...state.outboxQueue, outboxItem]));
-        }
+        final repo = _chatRepository;
+        final messageId = outgoing.id;
+        final peerKey = conv?.recipientPublicKey ?? '';
+
+        repo.sendMessage(
+          chatId: effectiveChatId,
+          message: outgoing,
+          recipientPublicKey: peerKey,
+        ).then((_) {
+          if (!isClosed) {
+            add(ChatDeliveryAdvanced(effectiveChatId, messageId, DeliveryStage.sent));
+            if (id != effectiveChatId) {
+              add(ChatDeliveryAdvanced(id, messageId, DeliveryStage.sent));
+            }
+          }
+        }).catchError((_) {
+          if (!isClosed) {
+            emit(state.copyWith(outboxQueue: [...state.outboxQueue, outboxItem]));
+          }
+        });
         return;
       }
 
