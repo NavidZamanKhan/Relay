@@ -10,6 +10,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../../core/crypto/crypto_service.dart';
+import '../../core/services/notification_service.dart';
 import 'models/user_profile.dart';
 import 'repositories/i_auth_repository.dart';
 import 'repositories/i_user_repository.dart';
@@ -96,6 +97,14 @@ final class AuthRestarted extends AuthEvent {
 
 final class AuthSignOutRequested extends AuthEvent {
   const AuthSignOutRequested();
+}
+
+final class AuthFcmTokenUpdated extends AuthEvent {
+  const AuthFcmTokenUpdated(this.token);
+  final String? token;
+
+  @override
+  List<Object?> get props => [token];
 }
 
 final class AuthErrorDismissed extends AuthEvent {
@@ -265,12 +274,14 @@ final class AuthBloc extends Bloc<AuthEvent, AuthState> {
     IAuthRepository? authRepository,
     IUserRepository? userRepository,
     CryptoService? cryptoService,
+    INotificationService? notificationService,
     FirebaseStorage? storage,
     FirebaseFirestore? firestore,
     bool previewAuthenticated = true,
   })  : _authRepository = authRepository,
         _userRepository = userRepository,
         _cryptoService = cryptoService,
+        _notificationService = notificationService,
         _customStorage = storage,
         _customFirestore = firestore,
         super(
@@ -296,6 +307,7 @@ final class AuthBloc extends Bloc<AuthEvent, AuthState> {
     on<AuthProfileUpdated>(_onProfileUpdated);
     on<AuthRestarted>(_onRestarted);
     on<AuthSignOutRequested>(_onSignOutRequested);
+    on<AuthFcmTokenUpdated>(_onFcmTokenUpdated);
     on<AuthErrorDismissed>(_onErrorDismissed);
     on<AuthKeyRegenerated>(_onKeyRegenerated);
     on<AuthKeyVaultRestored>(_onKeyVaultRestored);
@@ -309,16 +321,22 @@ final class AuthBloc extends Bloc<AuthEvent, AuthState> {
         add(_AuthUserChanged(_authRepository.currentUser));
       }
     }
+
+    _tokenSubscription = _notificationService?.onTokenRefresh.listen((token) {
+      add(AuthFcmTokenUpdated(token));
+    });
   }
 
   final IAuthRepository? _authRepository;
   final IUserRepository? _userRepository;
   final CryptoService? _cryptoService;
+  final INotificationService? _notificationService;
   final FirebaseStorage? _customStorage;
   FirebaseStorage get _storage => _customStorage ?? FirebaseStorage.instance;
   final FirebaseFirestore? _customFirestore;
   FirebaseFirestore get _firestore => _customFirestore ?? FirebaseFirestore.instance;
   StreamSubscription<User?>? _authStateSubscription;
+  StreamSubscription<String>? _tokenSubscription;
   Timer? _resendTimer;
   int _verificationEpoch = 0;
 
@@ -807,6 +825,12 @@ final class AuthBloc extends Bloc<AuthEvent, AuthState> {
     Emitter<AuthState> emit,
   ) async {
     _resendTimer?.cancel();
+    final currentUid = state.userId;
+    if (currentUid != null && currentUid.isNotEmpty) {
+      try {
+        await _userRepository?.updateFcmToken(uid: currentUid, token: null);
+      } catch (_) {}
+    }
     await _authRepository?.signOut();
     await _cryptoService?.clearKeys();
     emit(
@@ -817,6 +841,18 @@ final class AuthBloc extends Bloc<AuthEvent, AuthState> {
         clearError: true,
       ),
     );
+  }
+
+  Future<void> _onFcmTokenUpdated(
+    AuthFcmTokenUpdated event,
+    Emitter<AuthState> emit,
+  ) async {
+    final uid = state.userId;
+    if (uid != null && uid.isNotEmpty) {
+      try {
+        await _userRepository?.updateFcmToken(uid: uid, token: event.token);
+      } catch (_) {}
+    }
   }
 
   void _onErrorDismissed(AuthErrorDismissed event, Emitter<AuthState> emit) {
@@ -845,6 +881,12 @@ final class AuthBloc extends Bloc<AuthEvent, AuthState> {
     if (state.step != AuthStep.complete || state.userId != user.uid) {
       emit(state.copyWith(userId: user.uid, isVerifying: true));
     }
+
+    _notificationService?.getFcmToken().then((token) {
+      if (token != null) {
+        _userRepository?.updateFcmToken(uid: user.uid, token: token);
+      }
+    }).catchError((_) {});
 
     UserProfile? profile;
     try {
@@ -1013,6 +1055,7 @@ final class AuthBloc extends Bloc<AuthEvent, AuthState> {
   Future<void> close() {
     _resendTimer?.cancel();
     _authStateSubscription?.cancel();
+    _tokenSubscription?.cancel();
     return super.close();
   }
 }

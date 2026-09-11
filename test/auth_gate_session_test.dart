@@ -114,6 +114,17 @@ class MockUserRepository implements IUserRepository {
       _profiles[uid] = existing.copyWith(isOnline: isOnline);
     }
   }
+
+  @override
+  Future<void> updateFcmToken({required String uid, required String? token}) async {
+    final existing = _profiles[uid];
+    if (existing != null) {
+      _profiles[uid] = existing.copyWith(
+        fcmToken: token,
+        clearFcmToken: token == null,
+      );
+    }
+  }
 }
 
 class FakeSecureStorage extends Fake implements FlutterSecureStorage {

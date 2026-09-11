@@ -85,4 +85,17 @@ class FirestoreUserRepository implements IUserRepository {
       });
     } catch (_) {}
   }
+
+  @override
+  Future<void> updateFcmToken({required String uid, required String? token}) async {
+    final currentUser = _auth.currentUser;
+    if (currentUser == null || currentUser.uid != uid) return;
+
+    try {
+      await _usersCollection.doc(uid).update({
+        'fcmToken': token ?? FieldValue.delete(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (_) {}
+  }
 }

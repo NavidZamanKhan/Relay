@@ -6,6 +6,7 @@ import 'app.dart';
 import 'app_bloc.dart';
 import 'core/crypto/crypto_service.dart';
 import 'core/services/app_settings_storage.dart';
+import 'core/services/notification_service.dart';
 import 'features/auth/auth_bloc.dart';
 import 'features/auth/repositories/firebase_auth_repository.dart';
 import 'features/auth/repositories/firestore_user_repository.dart';
@@ -27,6 +28,8 @@ Future<void> main() async {
   final userRepository = FirestoreUserRepository();
   final cryptoService = CryptoService();
   final chatRepository = FirestoreChatRepository(cryptoService: cryptoService);
+  final notificationService = RelayNotificationService();
+  await notificationService.initialize();
 
   runApp(
     MultiRepositoryProvider(
@@ -34,6 +37,7 @@ Future<void> main() async {
         RepositoryProvider<IChatRepository>.value(value: chatRepository),
         RepositoryProvider<IUserRepository>.value(value: userRepository),
         RepositoryProvider<CryptoService>.value(value: cryptoService),
+        RepositoryProvider<INotificationService>.value(value: notificationService),
       ],
       child: MultiBlocProvider(
         providers: [
@@ -48,12 +52,14 @@ Future<void> main() async {
               authRepository: authRepository,
               userRepository: userRepository,
               cryptoService: cryptoService,
+              notificationService: notificationService,
               previewAuthenticated: false,
             ),
           ),
           BlocProvider(
             create: (_) => ChatBloc(
               chatRepository: chatRepository,
+              notificationService: notificationService,
               demoMode: false,
             ),
           ),

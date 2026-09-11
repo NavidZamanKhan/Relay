@@ -1,10 +1,16 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'app_bloc.dart';
+import 'core/motion/relay_motion.dart';
 import 'core/theme/relay_theme.dart';
 import 'features/auth/relay_gate.dart';
+import 'features/chats/chat_bloc.dart';
+import 'features/chats/conversation_page.dart';
+import 'features/chats/widgets/in_app_notification_banner.dart';
+
+final GlobalKey<NavigatorState> relayNavigatorKey = GlobalKey<NavigatorState>();
 
 class RelayApp extends StatelessWidget {
   const RelayApp({super.key});
@@ -15,6 +21,7 @@ class RelayApp extends StatelessWidget {
       buildWhen: (previous, current) => previous.themeMode != current.themeMode,
       builder: (context, state) {
         return MaterialApp(
+          navigatorKey: relayNavigatorKey,
           title: 'Relay',
           debugShowCheckedModeBanner: false,
           theme: RelayTheme.light,
@@ -39,7 +46,9 @@ class RelayApp extends StatelessWidget {
                     );
             return AnnotatedRegion<SystemUiOverlayStyle>(
               value: overlay,
-              child: child ?? const SizedBox.shrink(),
+              child: _InAppNotificationHost(
+                child: child ?? const SizedBox.shrink(),
+              ),
             );
           },
           home: const RelayGate(),
@@ -53,6 +62,45 @@ class RelayApp extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+class _InAppNotificationHost extends StatelessWidget {
+  const _InAppNotificationHost({required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocListener<ChatBloc, ChatState>(
+      listenWhen: (prev, curr) =>
+          curr.incomingNotification != null &&
+          curr.incomingNotification != prev.incomingNotification,
+      listener: (context, state) {
+        final notification = state.incomingNotification;
+        if (notification == null) return;
+
+        final appState = context.read<AppBloc>().state;
+        final enabled = appState.preferences['Message notifications'] ?? true;
+        final previews = appState.preferences['Message previews'] ?? true;
+
+        if (enabled) {
+          InAppNotificationBanner.show(
+            context,
+            payload: notification,
+            showPreview: previews,
+            onTap: () {
+              context.read<ChatBloc>().add(ChatOpened(notification.chatId));
+              relayNavigatorKey.currentState?.push(
+                RelayMotion.route(const ConversationPage()),
+              );
+            },
+          );
+        }
+
+        context.read<ChatBloc>().add(const ChatIncomingNotificationCleared());
+      },
+      child: child,
     );
   }
 }

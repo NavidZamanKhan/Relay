@@ -98,6 +98,12 @@ class MockUserRepository implements IUserRepository {
     required String uid,
     required bool isOnline,
   }) async {}
+
+  @override
+  Future<void> updateFcmToken({
+    required String uid,
+    required String? token,
+  }) async {}
 }
 
 void main() {

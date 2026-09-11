@@ -7,6 +7,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../core/services/audio_service.dart';
 import '../../core/services/connectivity_service.dart';
+import '../../core/services/notification_service.dart';
 import 'chat_models.dart';
 import 'demo_data.dart';
 import 'repositories/i_chat_repository.dart';
@@ -158,6 +159,17 @@ final class ChatReplyArrived extends ChatEvent {
   final String chatId;
   @override
   List<Object?> get props => [chatId];
+}
+
+final class ChatIncomingNotificationCleared extends ChatEvent {
+  const ChatIncomingNotificationCleared();
+}
+
+final class ChatNotificationReceived extends ChatEvent {
+  const ChatNotificationReceived(this.payload);
+  final NotificationPayload payload;
+  @override
+  List<Object?> get props => [payload];
 }
 
 final class ChatVoiceToggled extends ChatEvent {
@@ -396,6 +408,7 @@ final class ChatState extends Equatable {
     this.highlightedMessageId,
     this.networkStatus = NetworkStatus.online,
     this.outboxQueue = const [],
+    this.incomingNotification,
   });
   final List<Conversation> conversations;
   final Map<String, List<RelayMessage>> threads;
@@ -410,6 +423,7 @@ final class ChatState extends Equatable {
   final String? highlightedMessageId;
   final NetworkStatus networkStatus;
   final List<OutboxItem> outboxQueue;
+  final NotificationPayload? incomingNotification;
   List<RelayMessage> get messages => threads[activeId] ?? const [];
   bool get typing => typingIds.contains(activeId);
   List<Conversation> get filteredConversations {
@@ -455,6 +469,8 @@ final class ChatState extends Equatable {
     bool clearHighlightedMessage = false,
     NetworkStatus? networkStatus,
     List<OutboxItem>? outboxQueue,
+    NotificationPayload? incomingNotification,
+    bool clearIncomingNotification = false,
   }) => ChatState(
     conversations: conversations ?? this.conversations,
     threads: threads ?? this.threads,
@@ -479,6 +495,9 @@ final class ChatState extends Equatable {
         : (highlightedMessageId ?? this.highlightedMessageId),
     networkStatus: networkStatus ?? this.networkStatus,
     outboxQueue: outboxQueue ?? this.outboxQueue,
+    incomingNotification: clearIncomingNotification
+        ? null
+        : (incomingNotification ?? this.incomingNotification),
   );
   @override
   List<Object?> get props => [
@@ -501,6 +520,7 @@ final class ChatState extends Equatable {
     highlightedMessageId,
     networkStatus,
     outboxQueue,
+    incomingNotification,
   ];
 }
 
@@ -514,10 +534,12 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
     bool? demoMode,
     IAudioService? audioService,
     IConnectivityService? connectivityService,
+    INotificationService? notificationService,
   })  : _chatRepository = chatRepository,
         _currentUserId = currentUserId,
         _demoMode = demoMode ?? (chatRepository == null),
         _connectivityService = connectivityService,
+        _notificationService = notificationService,
         _audioService = audioService ??
             (((demoMode ?? (chatRepository == null)) ||
                     Platform.environment.containsKey('FLUTTER_TEST'))
@@ -541,6 +563,22 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
         if (!isClosed) add(ChatConnectivityChanged(status));
       });
     }
+
+    _notificationOpenedSubscription =
+        _notificationService?.onNotificationOpened.listen((payload) {
+      if (!isClosed && payload.chatId.isNotEmpty) {
+        add(ChatOpened(payload.chatId));
+      }
+    });
+
+    on<ChatIncomingNotificationCleared>((e, emit) {
+      emit(state.copyWith(clearIncomingNotification: true));
+    });
+
+    on<ChatNotificationReceived>((e, emit) {
+      emit(state.copyWith(incomingNotification: e.payload));
+      _notificationService?.showLocalNotification(payload: e.payload);
+    });
 
     _audioPositionSubscription = _audioService.positionStream.listen((pos) {
       if (state.playingMessageId != null) {
@@ -591,12 +629,38 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
           }
         }
       }
+
+      NotificationPayload? incomingNotification;
+      if (state.conversations.isNotEmpty && _currentUserId != null) {
+        final previousUnreads = {
+          for (final c in state.conversations) c.id: c.unread,
+        };
+        for (final conv in e.conversations) {
+          final prevUnread = previousUnreads[conv.id] ?? 0;
+          if (conv.unread > prevUnread && conv.id != state.activeId && !conv.muted) {
+            incomingNotification = NotificationPayload(
+              id: '${conv.id}_${DateTime.now().millisecondsSinceEpoch}',
+              chatId: conv.id,
+              title: conv.name,
+              body: conv.lastMessage,
+              avatarUrl: conv.avatarAsset,
+              timestamp: conv.lastMessageAt ?? DateTime.now(),
+            );
+            break;
+          }
+        }
+      }
+
       emit(
         state.copyWith(
           conversations: e.conversations,
           typingIds: activeTyping,
+          incomingNotification: incomingNotification,
         ),
       );
+      if (incomingNotification != null) {
+        _notificationService?.showLocalNotification(payload: incomingNotification);
+      }
       if (_chatRepository != null && _currentUserId != null) {
         for (final conv in e.conversations) {
           if (conv.unread > 0 && conv.delivery == DeliveryStage.sent) {
@@ -623,14 +687,44 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
       );
       final merged = [...e.messages, ...pendingSending]
         ..sort((a, b) => a.sentAt.compareTo(b.sentAt));
+
+      NotificationPayload? incomingNotification;
+      if (e.chatId != state.activeId && _currentUserId != null && currentMessages.isNotEmpty) {
+        final existingIds = currentMessages.map((m) => m.id).toSet();
+        final brandNewIncoming = e.messages.where(
+          (m) => !existingIds.contains(m.id) && m.senderId != _currentUserId,
+        );
+        if (brandNewIncoming.isNotEmpty) {
+          final latest = brandNewIncoming.last;
+          final conv = state.conversations.where((c) => c.id == e.chatId).firstOrNull;
+          if (conv == null || !conv.muted) {
+            incomingNotification = NotificationPayload(
+              id: latest.id,
+              chatId: e.chatId,
+              title: conv?.name ?? 'Relay',
+              body: latest.text ??
+                  (latest.kind == MessageKind.voice
+                      ? 'Voice note'
+                      : 'Photo attachment'),
+              avatarUrl: conv?.avatarAsset,
+              timestamp: latest.sentAt,
+            );
+          }
+        }
+      }
+
       emit(
         state.copyWith(
           threads: {
             ...state.threads,
             e.chatId: merged,
           },
+          incomingNotification: incomingNotification,
         ),
       );
+      if (incomingNotification != null) {
+        _notificationService?.showLocalNotification(payload: incomingNotification);
+      }
       if (_chatRepository != null && _currentUserId != null) {
         final isChatActive = state.activeId == e.chatId;
         for (final m in e.messages) {
@@ -1910,13 +2004,16 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
   }
 
   final IAudioService _audioService;
+  final INotificationService? _notificationService;
   Stream<double> get liveAmplitudeStream => _audioService.liveAmplitudeStream;
   StreamSubscription<Duration>? _audioPositionSubscription;
   StreamSubscription<PlayerState>? _audioStateSubscription;
+  StreamSubscription<NotificationPayload>? _notificationOpenedSubscription;
 
   @override
   Future<void> close() {
     _connectivitySubscription?.cancel();
+    _notificationOpenedSubscription?.cancel();
     _audioPositionSubscription?.cancel();
     _audioStateSubscription?.cancel();
     _audioService.dispose();

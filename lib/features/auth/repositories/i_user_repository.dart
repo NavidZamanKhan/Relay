@@ -13,4 +13,7 @@ abstract interface class IUserRepository {
 
   /// Updates presence status (online/offline) and timestamp at `users/{uid}`.
   Future<void> updatePresence({required String uid, required bool isOnline});
+
+  /// Updates the device FCM push notification token at `users/{uid}`.
+  Future<void> updateFcmToken({required String uid, required String? token});
 }

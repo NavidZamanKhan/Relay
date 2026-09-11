@@ -9,6 +9,7 @@ import '../../core/widgets/relay_avatar.dart';
 import '../../core/widgets/relay_button.dart';
 import '../auth/auth_bloc.dart';
 import '../auth/profile_setup_page.dart';
+import 'views/notification_settings_page.dart';
 import 'views/security_settings_page.dart';
 
 class SettingsPage extends StatelessWidget {
@@ -66,10 +67,13 @@ class SettingsPage extends StatelessWidget {
                   RelayMotion.route(const SecuritySettingsPage()),
                 ),
               ),
-              const _SettingsTile(
+              _SettingsTile(
                 icon: CupertinoIcons.bell,
                 title: 'Notifications',
                 subtitle: 'Messages, previews, and quiet hours',
+                onTap: () => Navigator.of(context).push(
+                  RelayMotion.route(const NotificationSettingsPage()),
+                ),
               ),
               const _SettingsTile(
                 icon: CupertinoIcons.chat_bubble_2,
