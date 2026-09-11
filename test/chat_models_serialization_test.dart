@@ -220,6 +220,31 @@ void main() {
       expect(convSadman.lastMessageAt?.isAtSameMomentAs(testDate), isTrue);
     });
 
+    test('Conversation preserves and serializes lastMessageSenderId', () {
+      final map = {
+        'participantIds': ['user_navid', 'user_sadman'],
+        'lastMessage': 'What is your problem?',
+        'lastMessageSenderId': 'user_navid',
+        'unreadCount': {
+          'user_navid': 0,
+          'user_sadman': 1,
+        },
+      };
+
+      final conv = Conversation.fromMap(
+        map,
+        'chat_navid_sadman',
+        currentUserId: 'user_sadman',
+      );
+
+      expect(conv.lastMessageSenderId, equals('user_navid'));
+      expect(conv.isLastMessageMine('user_sadman'), isFalse);
+      expect(conv.isLastMessageMine('user_navid'), isTrue);
+
+      final serialized = conv.toMap();
+      expect(serialized['lastMessageSenderId'], equals('user_navid'));
+    });
+
     test('directChatId returns deterministic sorted composite ID', () {
       final id1 = Conversation.directChatId('uid_alice', 'uid_bob');
       final id2 = Conversation.directChatId('uid_bob', 'uid_alice');

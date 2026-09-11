@@ -17,6 +17,7 @@ class RelayApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    InAppNotificationBanner.navigatorKey = relayNavigatorKey;
     return BlocBuilder<AppBloc, AppState>(
       buildWhen: (previous, current) => previous.themeMode != current.themeMode,
       builder: (context, state) {

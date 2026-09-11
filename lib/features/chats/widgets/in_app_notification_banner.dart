@@ -29,6 +29,7 @@ class InAppNotificationBanner extends StatefulWidget {
   final bool showPreview;
 
   static OverlayEntry? _activeEntry;
+  static GlobalKey<NavigatorState>? navigatorKey;
 
   /// Dismisses any currently active in-app banner.
   static void dismiss() {
@@ -46,7 +47,8 @@ class InAppNotificationBanner extends StatefulWidget {
   }) {
     dismiss();
 
-    final overlay = Overlay.maybeOf(context, rootOverlay: true);
+    final overlay = Overlay.maybeOf(context, rootOverlay: true) ??
+        navigatorKey?.currentState?.overlay;
     if (overlay == null) return;
 
     late final OverlayEntry entry;

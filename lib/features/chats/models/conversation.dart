@@ -29,6 +29,7 @@ class Conversation extends Equatable {
     this.isPeerTyping = false,
     this.adminIds = const [],
     this.description,
+    this.lastMessageSenderId,
   });
 
   final String id;
@@ -37,6 +38,7 @@ class Conversation extends Equatable {
   final String lastMessage;
   final String timeLabel;
   final DateTime? lastMessageAt;
+  final String? lastMessageSenderId;
   final List<String> participantIds;
   final String? recipientId;
   final String? recipientPublicKey;
@@ -81,6 +83,7 @@ class Conversation extends Equatable {
     bool? isPeerTyping,
     List<String>? adminIds,
     String? description,
+    String? lastMessageSenderId,
     bool clearDelivery = false,
   }) =>
       Conversation(
@@ -105,6 +108,7 @@ class Conversation extends Equatable {
         isPeerTyping: isPeerTyping ?? this.isPeerTyping,
         adminIds: adminIds ?? this.adminIds,
         description: description ?? this.description,
+        lastMessageSenderId: lastMessageSenderId ?? this.lastMessageSenderId,
       );
 
   /// Serializes conversation state for Firestore storage.
@@ -119,6 +123,7 @@ class Conversation extends Equatable {
       'lastMessageAt': useServerTimestamp
           ? FieldValue.serverTimestamp()
           : (lastMessageAt != null ? Timestamp.fromDate(lastMessageAt!) : null),
+      if (lastMessageSenderId != null) 'lastMessageSenderId': lastMessageSenderId,
       if (delivery != null) 'delivery': delivery!.toDbString(),
       'isGroup': isGroup,
       if (isGroup) 'name': name,
@@ -198,7 +203,15 @@ class Conversation extends Equatable {
     int unread = 0;
     if (unreadMap is Map && currentUserId != null) {
       unread = (unreadMap[currentUserId] as num?)?.toInt() ?? 0;
-    } else if (map['unread'] is num) {
+    }
+    if (unread == 0 && currentUserId != null) {
+      if (map['unreadCount.$currentUserId'] is num) {
+        unread = (map['unreadCount.$currentUserId'] as num).toInt();
+      } else if (map['unreadCounts.$currentUserId'] is num) {
+        unread = (map['unreadCounts.$currentUserId'] as num).toInt();
+      }
+    }
+    if (unread == 0 && map['unread'] is num) {
       unread = (map['unread'] as num).toInt();
     }
 
@@ -224,6 +237,9 @@ class Conversation extends Equatable {
         map['avatarAsset'] as String? ??
         map['avatarUrl'] as String?;
 
+    final lastMessageSenderId =
+        (map['lastMessageSenderId'] ?? map['lastSenderId']) as String?;
+
     return Conversation(
       id: id,
       name: name,
@@ -231,6 +247,7 @@ class Conversation extends Equatable {
       lastMessage: map['lastMessage'] as String? ?? '',
       timeLabel: timeString,
       lastMessageAt: messageTime,
+      lastMessageSenderId: lastMessageSenderId,
       participantIds: participants,
       recipientId: otherParticipantId ?? map['recipientId'] as String?,
       recipientPublicKey: resolvedPublicKey,
@@ -248,6 +265,12 @@ class Conversation extends Equatable {
       description: description,
     );
   }
+
+  /// Returns true if the last message in this conversation was sent by [currentUserId].
+  bool isLastMessageMine(String? currentUserId) =>
+      lastMessageSenderId != null &&
+      currentUserId != null &&
+      lastMessageSenderId == currentUserId;
 
   /// Generates the canonical composite document ID for a 1-on-1 thread.
   static String directChatId(String uidA, String uidB) {
@@ -276,6 +299,7 @@ class Conversation extends Equatable {
         lastMessage,
         timeLabel,
         lastMessageAt,
+        lastMessageSenderId,
         participantIds,
         recipientId,
         recipientPublicKey,

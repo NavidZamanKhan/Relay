@@ -174,5 +174,52 @@ void main() {
 
       expect(dismissed, isTrue);
     });
+
+    testWidgets('InAppNotificationBanner.show displays via navigatorKey fallback', (tester) async {
+      final navKey = GlobalKey<NavigatorState>();
+      InAppNotificationBanner.navigatorKey = navKey;
+
+      final payload = NotificationPayload(
+        id: 'msg_overlay_fallback',
+        chatId: 'chat_fallback',
+        title: 'Navid Zaman',
+        body: 'In-app notification works cleanly',
+        timestamp: DateTime.now(),
+      );
+
+      late BuildContext builderContext;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          navigatorKey: navKey,
+          builder: (context, child) {
+            builderContext = context;
+            return child ?? const SizedBox.shrink();
+          },
+          home: const Scaffold(
+            body: Center(child: Text('Home Page')),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      // Show banner from the builderContext (which has no Overlay ancestor)
+      InAppNotificationBanner.show(
+        builderContext,
+        payload: payload,
+      );
+
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.text('Navid Zaman'), findsOneWidget);
+      expect(find.text('In-app notification works cleanly'), findsOneWidget);
+
+      InAppNotificationBanner.dismiss();
+      await tester.pumpAndSettle();
+
+      expect(find.text('Navid Zaman'), findsNothing);
+    });
   });
 }

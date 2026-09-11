@@ -434,10 +434,27 @@ class _ConversationTile extends StatelessWidget {
                               ),
                             ),
                           ] else ...[
-                            if (chat.delivery != null) ...[
-                              RelayReceipt(stage: chat.delivery!, size: 14),
-                              const SizedBox(width: 4),
-                            ],
+                            Builder(
+                              builder: (context) {
+                                final currentUserId =
+                                    context.read<AuthBloc>().state.userId;
+                                final isOutgoing = chat.lastMessageSenderId != null
+                                    ? (currentUserId != null &&
+                                        chat.lastMessageSenderId == currentUserId)
+                                    : (chat.unread == 0 && chat.delivery != null);
+
+                                if (isOutgoing && chat.delivery != null) {
+                                  return Padding(
+                                    padding: const EdgeInsets.only(right: 4),
+                                    child: RelayReceipt(
+                                      stage: chat.delivery!,
+                                      size: 14,
+                                    ),
+                                  );
+                                }
+                                return const SizedBox.shrink();
+                              },
+                            ),
                             if (chat.previewKind != MessageKind.text) ...[
                               Icon(
                                 switch (chat.previewKind) {

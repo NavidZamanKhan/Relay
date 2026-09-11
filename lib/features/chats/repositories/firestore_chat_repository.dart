@@ -484,6 +484,7 @@ class FirestoreChatRepository implements IChatRepository {
         'lastMessage': message.text ?? 'Media message',
         'previewKind': message.kind.toDbString(),
         'lastMessageAt': FieldValue.serverTimestamp(),
+        'lastMessageSenderId': user.uid,
         'delivery': DeliveryStage.sent.toDbString(),
         'isGroup': false,
         'createdAt': FieldValue.serverTimestamp(),
@@ -512,6 +513,7 @@ class FirestoreChatRepository implements IChatRepository {
       'lastMessage': message.text ?? 'Media message',
       'previewKind': message.kind.toDbString(),
       'lastMessageAt': FieldValue.serverTimestamp(),
+      'lastMessageSenderId': user.uid,
       'delivery': DeliveryStage.sent.toDbString(),
       if (effectiveRecipientId != null)
         'unreadCount.$effectiveRecipientId': FieldValue.increment(1),
@@ -520,8 +522,15 @@ class FirestoreChatRepository implements IChatRepository {
       'participantAvatars.${user.uid}': ?myAvatar,
     };
 
-    batch.set(chatRef, updateData, SetOptions(merge: true));
-    await batch.commit();
+    try {
+      batch.update(chatRef, updateData);
+      await batch.commit();
+    } catch (_) {
+      final fallbackBatch = _firestore.batch();
+      fallbackBatch.set(messageRef, payload.toMap(useServerTimestamp: true));
+      fallbackBatch.set(chatRef, updateData, SetOptions(merge: true));
+      await fallbackBatch.commit();
+    }
     _knownExistingChats.add(effectiveChatId);
   }
 
@@ -607,13 +616,34 @@ class FirestoreChatRepository implements IChatRepository {
           .limit(30)
           .get();
 
-      final batch = _firestore.batch();
-      batch.update(chatRef, {
-        'unreadCount.$readerUserId': 0,
-        'unreadCounts.$readerUserId': 0,
+      final chatDoc = await chatRef.get();
+      final chatData = chatDoc.data() ?? {};
+
+      final chatUpdates = <String, dynamic>{
         'delivery': DeliveryStage.read.toDbString(),
         'lastMessageDelivery': DeliveryStage.read.toDbString(),
-      });
+      };
+
+      // Reset nested unreadCount map
+      if (chatData['unreadCount'] is Map) {
+        chatUpdates['unreadCount.$readerUserId'] = 0;
+      } else {
+        chatUpdates['unreadCount'] = {readerUserId: 0};
+      }
+
+      // Reset legacy literal dotted fields if present on the document
+      if (chatData.containsKey('unreadCount.$readerUserId')) {
+        chatUpdates['unreadCount.$readerUserId'] = 0;
+      }
+      if (chatData['unreadCounts'] is Map) {
+        chatUpdates['unreadCounts.$readerUserId'] = 0;
+      }
+      if (chatData.containsKey('unreadCounts.$readerUserId')) {
+        chatUpdates['unreadCounts.$readerUserId'] = 0;
+      }
+
+      final batch = _firestore.batch();
+      batch.set(chatRef, chatUpdates, SetOptions(merge: true));
 
       for (final doc in snapshot.docs) {
         final data = doc.data();
@@ -1111,6 +1141,7 @@ class FirestoreChatRepository implements IChatRepository {
         'lastMessage': voiceSnippet,
         'lastMessageAt': FieldValue.serverTimestamp(),
         'lastMessageTime': FieldValue.serverTimestamp(),
+        'lastMessageSenderId': user.uid,
         'previewKind': 'voice',
         'unreadCount': {
           user.uid: 0,
@@ -1134,6 +1165,7 @@ class FirestoreChatRepository implements IChatRepository {
         'lastMessage': voiceSnippet,
         'lastMessageAt': FieldValue.serverTimestamp(),
         'lastMessageTime': FieldValue.serverTimestamp(),
+        'lastMessageSenderId': user.uid,
         'previewKind': 'voice',
         'delivery': 'sent',
         'lastMessageDelivery': 'sent',

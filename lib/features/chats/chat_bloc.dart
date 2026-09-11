@@ -635,9 +635,26 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
         final previousUnreads = {
           for (final c in state.conversations) c.id: c.unread,
         };
+        final previousTimes = {
+          for (final c in state.conversations) c.id: c.lastMessageAt,
+        };
+        final previousMessages = {
+          for (final c in state.conversations) c.id: c.lastMessage,
+        };
+
         for (final conv in e.conversations) {
           final prevUnread = previousUnreads[conv.id] ?? 0;
-          if (conv.unread > prevUnread && conv.id != state.activeId && !conv.muted) {
+          final prevTime = previousTimes[conv.id];
+          final prevMsg = previousMessages[conv.id];
+
+          final isIncoming = conv.lastMessageSenderId != null &&
+              conv.lastMessageSenderId != _currentUserId;
+          final isNewMessage = (conv.unread > prevUnread) ||
+              (isIncoming &&
+                  (conv.lastMessageAt != prevTime ||
+                      conv.lastMessage != prevMsg));
+
+          if (isNewMessage && conv.id != state.activeId && !conv.muted) {
             incomingNotification = NotificationPayload(
               id: '${conv.id}_${DateTime.now().millisecondsSinceEpoch}',
               chatId: conv.id,

@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 /// Structured payload representing an incoming notification in Relay.
@@ -196,7 +197,9 @@ class RelayNotificationService implements INotificationService {
             ?.createNotificationChannel(_defaultChannel);
       }
     } catch (e) {
-      debugPrint('Local notifications initialization handled: $e');
+      if (e is! MissingPluginException) {
+        debugPrint('Local notifications initialization handled: $e');
+      }
     }
 
     _setupFirebaseMessaging(onNotificationTapped);
@@ -312,7 +315,9 @@ class RelayNotificationService implements INotificationService {
       final messaging = _messaging ?? FirebaseMessaging.instance;
       return await messaging.getToken();
     } catch (e) {
-      debugPrint('Could not retrieve FCM token: $e');
+      if (e is! MissingPluginException) {
+        debugPrint('Could not retrieve FCM token: $e');
+      }
       return null;
     }
   }
@@ -356,7 +361,9 @@ class RelayNotificationService implements INotificationService {
         payload: payload.toJson(),
       );
     } catch (e) {
-      debugPrint('Local notification show handled: $e');
+      if (e is! MissingPluginException) {
+        debugPrint('Local notification show handled: $e');
+      }
     }
   }
 
