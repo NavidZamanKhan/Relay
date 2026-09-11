@@ -1,15 +1,12 @@
-import 'dart:convert';
-import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/gestures.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/motion/relay_motion.dart';
 import '../../core/services/audio_service.dart';
@@ -19,7 +16,9 @@ import '../../core/widgets/relay_toast.dart';
 import 'chat_bloc.dart';
 import 'chat_models.dart';
 import 'relay_receipt.dart';
+import 'views/media_viewer_page.dart';
 import 'widgets/message_context_menu.dart';
+import 'widgets/relay_message_image.dart';
 
 class MessageBubble extends StatelessWidget {
   const MessageBubble({
@@ -560,17 +559,10 @@ class _ImageMessage extends StatelessWidget {
         ],
         GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTap: () => Navigator.of(context).push(
-            PageRouteBuilder<void>(
-              opaque: false,
-              barrierColor: Colors.black.withValues(alpha: .92),
-              pageBuilder: (_, animation, _) => _ImagePreview(
-                message: message,
-                heroTag: 'shared-image-${message.id}',
-              ),
-              transitionsBuilder: (_, animation, _, child) =>
-                  FadeTransition(opacity: animation, child: child),
-            ),
+          onTap: () => MediaViewerPage.open(
+            context,
+            message,
+            heroTag: 'shared-image-${message.id}',
           ),
           onLongPress: onLongPress,
           child: Hero(
@@ -579,7 +571,7 @@ class _ImageMessage extends StatelessWidget {
               borderRadius: BorderRadius.circular(14),
               child: AspectRatio(
                 aspectRatio: 4 / 3,
-                child: _BubbleImage(message: message),
+                child: RelayMessageImage(message: message),
               ),
             ),
           ),
@@ -870,270 +862,6 @@ class WaveformPainter extends CustomPainter {
       oldDelegate.waveform != waveform;
 }
 
-class _ImagePreview extends StatelessWidget {
-  const _ImagePreview({
-    required this.message,
-    required this.heroTag,
-  });
-
-  final RelayMessage message;
-  final String heroTag;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: SafeArea(
-        child: Stack(
-          children: [
-            Center(
-              child: Hero(
-                tag: heroTag,
-                child: InteractiveViewer(
-                  minScale: .8,
-                  maxScale: 4,
-                  child: _BubbleImage(
-                    message: message,
-                    fit: BoxFit.contain,
-                  ),
-                ),
-              ),
-            ),
-            Positioned(
-              top: 12,
-              left: 12,
-              child: IconButton.filled(
-                onPressed: () => Navigator.pop(context),
-                style: IconButton.styleFrom(
-                  backgroundColor: Colors.black.withValues(alpha: .42),
-                  foregroundColor: Colors.white,
-                ),
-                icon: const Icon(CupertinoIcons.clear, size: 20),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _BubbleImage extends StatefulWidget {
-  const _BubbleImage({
-    required this.message,
-    this.fit = BoxFit.cover,
-  });
-
-  final RelayMessage message;
-  final BoxFit fit;
-
-  @override
-  State<_BubbleImage> createState() => _BubbleImageState();
-}
-
-class _BubbleImageState extends State<_BubbleImage> {
-  String? _resolvedLocalPath;
-
-  @override
-  void initState() {
-    super.initState();
-    _checkPersistentLocalCache();
-  }
-
-  @override
-  void didUpdateWidget(covariant _BubbleImage oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.message.id != widget.message.id ||
-        oldWidget.message.asset != widget.message.asset ||
-        oldWidget.message.imageUrl != widget.message.imageUrl ||
-        oldWidget.message.imageData != widget.message.imageData) {
-      _checkPersistentLocalCache();
-    }
-  }
-
-  Future<void> _checkPersistentLocalCache() async {
-    final msg = widget.message;
-    // 1. Direct asset
-    if (msg.asset != null && msg.asset!.isNotEmpty) {
-      if (msg.asset!.startsWith('assets/')) {
-        if (mounted) setState(() => _resolvedLocalPath = msg.asset);
-        return;
-      }
-      try {
-        final f = File(msg.asset!);
-        if (f.existsSync()) {
-          if (mounted) setState(() => _resolvedLocalPath = msg.asset);
-          return;
-        }
-      } catch (_) {}
-    }
-
-    // 2. Persistent document directory cache
-    try {
-      final docsDir = await getApplicationDocumentsDirectory();
-      final target = File('${docsDir.path}/relay_images/img_${msg.id}.jpg');
-      if (await target.exists() && await target.length() > 0) {
-        if (mounted) setState(() => _resolvedLocalPath = target.path);
-        return;
-      }
-    } catch (_) {}
-
-    // Fallback: If imageData is present, eagerly cache it to disk
-    if (msg.imageData != null && msg.imageData!.isNotEmpty) {
-      try {
-        final rawBase64 = msg.imageData!.contains(',')
-            ? msg.imageData!.split(',').last
-            : msg.imageData!;
-        final bytes = base64Decode(rawBase64);
-        _cacheBytesToDocsDir(msg.id, bytes);
-      } catch (_) {}
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final msg = widget.message;
-
-    // 1. If persistent local cache or existing asset path was resolved
-    if (_resolvedLocalPath != null) {
-      if (_resolvedLocalPath!.startsWith('assets/')) {
-        return Image.asset(
-          _resolvedLocalPath!,
-          fit: widget.fit,
-          cacheWidth: 1100,
-          errorBuilder: (_, _, _) => _buildFallback(msg),
-        );
-      }
-      try {
-        final file = File(_resolvedLocalPath!);
-        if (file.existsSync()) {
-          return Image.file(
-            file,
-            fit: widget.fit,
-            cacheWidth: 1100,
-            errorBuilder: (_, _, _) => _buildFallback(msg),
-          );
-        }
-      } catch (_) {}
-    }
-
-    // 2. Direct synchronous check for message.asset if it exists right now
-    if (msg.asset != null && msg.asset!.isNotEmpty) {
-      if (msg.asset!.startsWith('assets/')) {
-        return Image.asset(
-          msg.asset!,
-          fit: widget.fit,
-          cacheWidth: 1100,
-          errorBuilder: (_, _, _) => _buildFallback(msg),
-        );
-      }
-      try {
-        final file = File(msg.asset!);
-        if (file.existsSync()) {
-          return Image.file(
-            file,
-            fit: widget.fit,
-            cacheWidth: 1100,
-            errorBuilder: (_, _, _) => _buildFallback(msg),
-          );
-        }
-      } catch (_) {}
-    }
-
-    // 3. Fallback to Cloud Storage URL or inline base64
-    return _buildFallback(msg);
-  }
-
-  Widget _buildFallback(RelayMessage msg) {
-    // A. Network URL
-    if (msg.imageUrl != null &&
-        msg.imageUrl!.isNotEmpty &&
-        msg.imageUrl!.startsWith('http')) {
-      return Image.network(
-        msg.imageUrl!,
-        fit: widget.fit,
-        cacheWidth: 1100,
-        loadingBuilder: (context, child, progress) {
-          if (progress == null) {
-            _cacheBase64IfAvailable(msg);
-            return child;
-          }
-          return ColoredBox(
-            color: RelayColors.ink.withValues(alpha: .12),
-            child: const Center(
-              child: SizedBox.square(
-                dimension: 23,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: RelayColors.coral,
-                ),
-              ),
-            ),
-          );
-        },
-        errorBuilder: (_, _, _) => _buildBase64OrPlaceholder(msg),
-      );
-    }
-
-    // B. Base64
-    return _buildBase64OrPlaceholder(msg);
-  }
-
-  Widget _buildBase64OrPlaceholder(RelayMessage msg) {
-    if (msg.imageData != null && msg.imageData!.isNotEmpty) {
-      try {
-        final rawBase64 = msg.imageData!.contains(',')
-            ? msg.imageData!.split(',').last
-            : msg.imageData!;
-        final bytes = base64Decode(rawBase64);
-        _cacheBytesToDocsDir(msg.id, bytes);
-        return Image.memory(
-          bytes,
-          fit: widget.fit,
-          cacheWidth: 1100,
-          errorBuilder: (_, _, _) => _buildPlaceholder(),
-        );
-      } catch (_) {}
-    }
-
-    return _buildPlaceholder();
-  }
-
-  Widget _buildPlaceholder() {
-    return const ColoredBox(
-      color: RelayColors.inkSoft,
-      child: Center(
-        child: Icon(CupertinoIcons.photo, color: Colors.white70, size: 28),
-      ),
-    );
-  }
-
-  void _cacheBase64IfAvailable(RelayMessage msg) {
-    if (msg.imageData != null && msg.imageData!.isNotEmpty) {
-      try {
-        final rawBase64 = msg.imageData!.contains(',')
-            ? msg.imageData!.split(',').last
-            : msg.imageData!;
-        _cacheBytesToDocsDir(msg.id, base64Decode(rawBase64));
-      } catch (_) {}
-    }
-  }
-
-  void _cacheBytesToDocsDir(String messageId, Uint8List bytes) {
-    getApplicationDocumentsDirectory().then((docsDir) async {
-      try {
-        final dir = Directory('${docsDir.path}/relay_images');
-        if (!await dir.exists()) {
-          await dir.create(recursive: true);
-        }
-        final file = File('${dir.path}/img_$messageId.jpg');
-        if (!await file.exists()) {
-          await file.writeAsBytes(bytes, flush: true);
-        }
-      } catch (_) {}
-    }).catchError((_) {});
-  }
-}
 
 class _DocumentMessage extends StatelessWidget {
   const _DocumentMessage({required this.message, required this.foreground});

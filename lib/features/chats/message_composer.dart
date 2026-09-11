@@ -9,6 +9,7 @@ import '../../core/theme/relay_colors.dart';
 import '../../core/widgets/relay_emoji_picker.dart';
 import 'chat_bloc.dart';
 import 'chat_models.dart';
+import 'widgets/image_attachment_preview_sheet.dart';
 import 'widgets/live_waveform_visualizer.dart';
 
 /// RECORDING GESTURE OWNERSHIP - KEEP THIS STRUCTURE WHEN ADDING `record`.
@@ -538,12 +539,23 @@ class _MessageComposerState extends State<MessageComposer>
       final picker = ImagePicker();
       final picked = await picker.pickImage(
         source: source,
-        maxWidth: 1280,
-        maxHeight: 1280,
-        imageQuality: 70,
+        maxWidth: 1440,
+        maxHeight: 1440,
+        imageQuality: 75,
       );
-      if (picked != null) {
-        _bloc.add(ChatImagePicked(picked.path));
+      if (picked != null && mounted) {
+        await ImageAttachmentPreviewSheet.show(
+          context,
+          imagePath: picked.path,
+          onSend: (caption) {
+            _bloc.add(
+              ChatImagePicked(
+                picked.path,
+                caption: caption.isNotEmpty ? caption : null,
+              ),
+            );
+          },
+        );
       }
     } catch (_) {}
   }
