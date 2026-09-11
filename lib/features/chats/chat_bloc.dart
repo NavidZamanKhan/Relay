@@ -1110,7 +1110,17 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
       );
       try {
         await _audioService.startRecording();
-      } catch (_) {}
+      } catch (_) {
+        emit(
+          state.copyWith(
+            isRecording: false,
+            recordingLocked: false,
+            recordingSeconds: 0,
+            cancelProgress: 0,
+          ),
+        );
+        return;
+      }
       _recordingTimer = Timer.periodic(const Duration(seconds: 1), (_) {
         if (!isClosed) add(const ChatRecordingTicked());
       });
@@ -1694,6 +1704,7 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
   }
 
   final IAudioService _audioService;
+  Stream<double> get liveAmplitudeStream => _audioService.liveAmplitudeStream;
   StreamSubscription<Duration>? _audioPositionSubscription;
   StreamSubscription<PlayerState>? _audioStateSubscription;
 

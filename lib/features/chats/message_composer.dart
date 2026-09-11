@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -11,6 +9,7 @@ import '../../core/theme/relay_colors.dart';
 import '../../core/widgets/relay_emoji_picker.dart';
 import 'chat_bloc.dart';
 import 'chat_models.dart';
+import 'widgets/live_waveform_visualizer.dart';
 
 /// RECORDING GESTURE OWNERSHIP - KEEP THIS STRUCTURE WHEN ADDING `record`.
 ///
@@ -236,9 +235,15 @@ class _MessageComposerState extends State<MessageComposer>
                                       ),
                                     ),
                                     const SizedBox(width: 13),
-                                    const Expanded(
+                                    Expanded(
                                       child: RepaintBoundary(
-                                        child: _RecordingWave(),
+                                        child: LiveWaveformVisualizer(
+                                          amplitudeStream:
+                                              _bloc.liveAmplitudeStream,
+                                          isRecording: state.isRecording,
+                                          cancelProgress:
+                                              state.cancelProgress,
+                                        ),
                                       ),
                                     ),
                                     const SizedBox(width: 15),
@@ -542,73 +547,6 @@ class _MessageComposerState extends State<MessageComposer>
       }
     } catch (_) {}
   }
-}
-
-/// The waveform repaints at the display cadence through CustomPainter(repaint:).
-/// It never rebuilds the composer or list. The seeded envelope is illustrative;
-/// replace the samples with on-device amplitude data in the production phase.
-class _RecordingWave extends StatefulWidget {
-  const _RecordingWave();
-  @override
-  State<_RecordingWave> createState() => _RecordingWaveState();
-}
-
-class _RecordingWaveState extends State<_RecordingWave>
-    with SingleTickerProviderStateMixin {
-  late final _clock = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 1300),
-  );
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (MediaQuery.disableAnimationsOf(context)) {
-      _clock.stop();
-    } else {
-      _clock.repeat();
-    }
-  }
-
-  @override
-  void dispose() {
-    _clock.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => SizedBox(
-    height: 30,
-    child: CustomPaint(painter: _LiveWavePainter(_clock)),
-  );
-}
-
-class _LiveWavePainter extends CustomPainter {
-  _LiveWavePainter(this.clock) : super(repaint: clock);
-  final Animation<double> clock;
-  @override
-  void paint(Canvas canvas, Size size) {
-    final pen = Paint()
-      ..color = RelayColors.coral
-      ..strokeWidth = 2.5
-      ..strokeCap = StrokeCap.round;
-    const count = 25;
-    for (var i = 0; i < count; i++) {
-      final h =
-          4 +
-          (size.height - 4) *
-              (math.sin(i * .72 + clock.value * math.pi * 2).abs() * .65 + .12);
-      final x = (i + .5) * size.width / count;
-      canvas.drawLine(
-        Offset(x, (size.height - h) / 2),
-        Offset(x, (size.height + h) / 2),
-        pen,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _LiveWavePainter oldDelegate) =>
-      oldDelegate.clock != clock;
 }
 
 class _AttachmentTile extends StatelessWidget {

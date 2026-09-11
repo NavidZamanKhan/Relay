@@ -226,14 +226,15 @@ class RelayAudioService implements IAudioService {
     _player.dispose();
   }
 
-  /// Normalizes dBFS (-60 dB to 0 dB) to 0.0 - 1.0.
+  /// Normalizes dBFS (-60 dB to 0 dB) to 0.0 - 1.0 using perceptual curve.
   static double _normalizeDecibels(double db) {
-    if (db.isNaN || db.isInfinite) return 0.15;
-    if (db <= -60) return 0.15;
+    if (db.isNaN || db.isInfinite) return 0.12;
+    if (db <= -60) return 0.12;
     if (db >= 0) return 1.0;
-    // Map -60..0 dB to 0.15..1.0 linearly
+    // Map -60..0 dB to 0.0..1.0 with a power curve for responsive voice dynamics
     final ratio = (db + 60) / 60.0;
-    return (0.15 + 0.85 * ratio).clamp(0.15, 1.0);
+    final perceptual = math.pow(ratio, 0.75).toDouble();
+    return (0.12 + 0.88 * perceptual).clamp(0.12, 1.0);
   }
 
   /// Downsamples or interpolates an arbitrary list of amplitude samples into [targetBars] items.
@@ -283,28 +284,65 @@ class RelayAudioService implements IAudioService {
 /// Fallback in-memory implementation of [IAudioService] for testing, demo mode,
 /// and environments without native audio hardware/plugins.
 class NoOpAudioService implements IAudioService {
+  NoOpAudioService({this.emitMockAmplitudes = false});
+
+  final bool emitMockAmplitudes;
   final _liveAmplitude = StreamController<double>.broadcast();
   final _positionController = StreamController<Duration>.broadcast();
   final _durationController = StreamController<Duration?>.broadcast();
   final _playerStateController = StreamController<PlayerState>.broadcast();
+  Timer? _mockRecordingTimer;
+  int _mockTick = 0;
 
   @override
   Future<bool> hasPermission() async => true;
 
   @override
-  Future<void> startRecording() async {}
+  Future<void> startRecording() async {
+    _mockRecordingTimer?.cancel();
+    _mockTick = 0;
+    if (emitMockAmplitudes) {
+      _mockRecordingTimer = Timer.periodic(const Duration(milliseconds: 70), (t) {
+        if (_liveAmplitude.isClosed) {
+          t.cancel();
+          return;
+        }
+        _mockTick++;
+        final wave = (math.sin(_mockTick * 0.45).abs() * 0.55 +
+                math.cos(_mockTick * 0.2).abs() * 0.25 +
+                0.15)
+            .clamp(0.12, 1.0);
+        _liveAmplitude.add(wave);
+      });
+    }
+  }
+
+  /// Manually emits an amplitude value into the stream for testing.
+  void emitAmplitude(double amplitude) {
+    if (!_liveAmplitude.isClosed) {
+      _liveAmplitude.add(amplitude);
+    }
+  }
 
   @override
   Future<({String path, Duration duration, List<double> waveform})?> stopRecording() async {
+    _mockRecordingTimer?.cancel();
+    _mockRecordingTimer = null;
     return (
       path: '',
-      duration: Duration.zero,
-      waveform: List.filled(32, 0.25),
+      duration: Duration(seconds: math.max(1, (_mockTick * 0.07).round())),
+      waveform: List.generate(
+        32,
+        (i) => (math.sin(i * 0.5).abs() * 0.65 + 0.2).clamp(0.18, 0.95),
+      ),
     );
   }
 
   @override
-  Future<void> cancelRecording() async {}
+  Future<void> cancelRecording() async {
+    _mockRecordingTimer?.cancel();
+    _mockRecordingTimer = null;
+  }
 
   @override
   Stream<double> get liveAmplitudeStream => _liveAmplitude.stream;
@@ -348,6 +386,7 @@ class NoOpAudioService implements IAudioService {
 
   @override
   void dispose() {
+    _mockRecordingTimer?.cancel();
     _liveAmplitude.close();
     _positionController.close();
     _durationController.close();

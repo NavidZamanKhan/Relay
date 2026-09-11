@@ -12,6 +12,7 @@ import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../../core/motion/relay_motion.dart';
+import '../../core/services/audio_service.dart';
 import '../../core/theme/relay_colors.dart';
 import '../../core/widgets/relay_emoji_picker.dart';
 import '../../core/widgets/relay_toast.dart';
@@ -830,22 +831,23 @@ class WaveformPainter extends CustomPainter {
     final gap = size.width / bars;
     final activeUntil = (bars * progress).round();
     final hasRealWaveform = waveform != null && waveform!.isNotEmpty;
+    final resampled = hasRealWaveform
+        ? (waveform!.length == bars
+            ? waveform!
+            : RelayAudioService.resampleWaveform(waveform!, bars))
+        : null;
 
     for (var i = 0; i < bars; i++) {
       double wave;
-      if (hasRealWaveform) {
-        if (i < waveform!.length) {
-          wave = waveform![i];
-        } else {
-          wave = 0.25;
-        }
+      if (resampled != null) {
+        wave = resampled[i];
       } else {
         wave = .24 +
             .72 *
                 ((math.sin((i + seed) * .79).abs() * .55) +
                     (math.sin((i + 2) * .31).abs() * .45));
       }
-      final height = size.height * wave.clamp(.18, .96).toDouble();
+      final height = size.height * wave.clamp(.16, .96).toDouble();
       final paint = Paint()
         ..color = i < activeUntil ? active : inactive
         ..strokeWidth = 2.4
