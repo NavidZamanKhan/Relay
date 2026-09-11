@@ -14,9 +14,11 @@ import 'package:path_provider/path_provider.dart';
 import '../../core/motion/relay_motion.dart';
 import '../../core/theme/relay_colors.dart';
 import '../../core/widgets/relay_emoji_picker.dart';
+import '../../core/widgets/relay_toast.dart';
 import 'chat_bloc.dart';
 import 'chat_models.dart';
 import 'relay_receipt.dart';
+import 'widgets/message_context_menu.dart';
 
 class MessageBubble extends StatelessWidget {
   const MessageBubble({
@@ -208,28 +210,222 @@ class MessageBubble extends StatelessWidget {
       PageRouteBuilder<void>(
         opaque: false,
         barrierDismissible: true,
-        barrierColor: Colors.black.withValues(alpha: 0.18),
-        transitionDuration: const Duration(milliseconds: 200),
-        reverseTransitionDuration: const Duration(milliseconds: 150),
+        barrierColor: Colors.black.withValues(alpha: 0.22),
+        transitionDuration: const Duration(milliseconds: 220),
+        reverseTransitionDuration: const Duration(milliseconds: 160),
         pageBuilder: (routeContext, animation, secondaryAnimation) {
-          return _AnchoredReactionOverlay(
+          return MessageContextOverlay(
             bubbleOffset: bubbleOffset,
             bubbleSize: bubbleSize,
             mine: mine,
+            message: message,
             animation: animation,
             currentReaction: currentReaction,
             onReactionSelected: (emoji) {
               Navigator.of(routeContext).pop();
               bloc.add(ChatMessageReactionToggled(chatId, message.id, emoji));
             },
-            onMorePressed: () {
+            onMoreReactionsPressed: () {
               Navigator.of(routeContext).pop();
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 _showFullEmojiPickerForReaction(bubbleContext, bloc, chatId, message);
               });
             },
+            onReplyPressed: () {
+              bloc.add(ChatReplyTargetSet(message));
+            },
+            onCopyPressed: () {
+              _copyMessageContent(bubbleContext, message);
+            },
+            onSharePressed: () {
+              _shareMessageContent(bubbleContext, message);
+            },
+            onInfoPressed: () {
+              _showMessageInfoSheet(bubbleContext, message);
+            },
+            onDeletePressed: () {
+              _showDeleteDialog(bubbleContext, bloc, message);
+            },
           );
         },
+      ),
+    );
+  }
+
+  void _copyMessageContent(BuildContext context, RelayMessage message) {
+    HapticFeedback.lightImpact();
+    final String textToCopy;
+    switch (message.kind) {
+      case MessageKind.text:
+        textToCopy = message.text ?? '';
+      case MessageKind.image:
+        textToCopy = message.text?.isNotEmpty == true
+            ? message.text!
+            : (message.imageUrl ?? 'Photo');
+      case MessageKind.voice:
+        textToCopy = 'Voice note (${message.duration.inSeconds}s)';
+      case MessageKind.document:
+        textToCopy = message.text ?? 'Document';
+    }
+    Clipboard.setData(ClipboardData(text: textToCopy));
+    RelayToast.show(
+      context,
+      message: 'Copied to clipboard',
+      icon: CupertinoIcons.doc_on_doc,
+    );
+  }
+
+  void _shareMessageContent(BuildContext context, RelayMessage message) {
+    HapticFeedback.lightImpact();
+    final text = message.text ?? message.imageUrl ?? 'Relay message';
+    Clipboard.setData(ClipboardData(text: text));
+    RelayToast.show(
+      context,
+      message: 'Link copied for sharing',
+      icon: CupertinoIcons.share,
+    );
+  }
+
+  void _showMessageInfoSheet(BuildContext context, RelayMessage message) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final timeStr = DateFormat('MMM d, yyyy  HH:mm').format(message.sentAt);
+    final deliveryLabel = switch (message.delivery) {
+      DeliveryStage.sending => 'Sending',
+      DeliveryStage.sent => 'Sent to server',
+      DeliveryStage.delivered => 'Delivered to recipient',
+      DeliveryStage.read => 'Read by recipient',
+    };
+
+    showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => Container(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+        decoration: BoxDecoration(
+          color: dark ? const Color(0xFF1E2127) : Colors.white,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.16),
+              blurRadius: 16,
+              offset: const Offset(0, -4),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 38,
+                height: 4.5,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: dark ? Colors.white24 : Colors.black12,
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              ),
+            ),
+            const Row(
+              children: [
+                Icon(
+                  CupertinoIcons.info_circle_fill,
+                  color: RelayColors.coral,
+                  size: 20,
+                ),
+                SizedBox(width: 8),
+                Text(
+                  'Message Details',
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: -0.3,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _infoRow('Type', message.kind.name.toUpperCase(), dark),
+            _infoRow('Sent', timeStr, dark),
+            _infoRow('Status', deliveryLabel, dark),
+            _infoRow('Security', 'End-to-End Encrypted (AES-256-GCM)', dark),
+            _infoRow('ID', message.id, dark),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _infoRow(String label, String value, bool dark) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 13.5,
+              color: dark ? Colors.white60 : Colors.black54,
+            ),
+          ),
+          Flexible(
+            child: Text(
+              value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.end,
+              style: TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w500,
+                color: dark ? Colors.white : Colors.black87,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showDeleteDialog(
+    BuildContext context,
+    ChatBloc bloc,
+    RelayMessage message,
+  ) {
+    showCupertinoDialog<void>(
+      context: context,
+      builder: (dialogContext) => CupertinoAlertDialog(
+        title: const Text('Delete Message?'),
+        content: const Text(
+          'This will remove the message from your current conversation view.',
+        ),
+        actions: [
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+          CupertinoDialogAction(
+            isDestructiveAction: true,
+            onPressed: () {
+              Navigator.of(dialogContext).pop();
+              bloc.add(
+                ChatMessageDeleted(
+                  chatId: bloc.state.activeId,
+                  messageId: message.id,
+                ),
+              );
+              RelayToast.show(
+                context,
+                message: 'Message removed',
+                icon: CupertinoIcons.trash,
+              );
+            },
+            child: const Text('Delete'),
+          ),
+        ],
       ),
     );
   }
@@ -261,183 +457,6 @@ class MessageBubble extends StatelessWidget {
   }
 }
 
-class _AnchoredReactionOverlay extends StatelessWidget {
-  const _AnchoredReactionOverlay({
-    required this.bubbleOffset,
-    required this.bubbleSize,
-    required this.mine,
-    required this.animation,
-    required this.currentReaction,
-    required this.onReactionSelected,
-    required this.onMorePressed,
-  });
-
-  final Offset bubbleOffset;
-  final Size bubbleSize;
-  final bool mine;
-  final Animation<double> animation;
-  final String? currentReaction;
-  final ValueChanged<String> onReactionSelected;
-  final VoidCallback onMorePressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final screenSize = MediaQuery.sizeOf(context);
-    final padding = MediaQuery.paddingOf(context);
-    final dark = Theme.of(context).brightness == Brightness.dark;
-
-    const quickReactions = [
-      '\u{2764}\u{FE0F}',
-      '\u{1F44D}',
-      '\u{1F602}',
-      '\u{1F62E}',
-      '\u{1F622}',
-      '\u{1F64F}',
-    ];
-
-    const double barHeight = 48.0;
-    const double barWidth = 296.0;
-    const double gap = 8.0;
-    const double screenMargin = 12.0;
-
-    final minTop = padding.top + kToolbarHeight + 8.0;
-    final maxBottom = screenSize.height - padding.bottom - 60.0;
-
-    final placeAbove = (bubbleOffset.dy - barHeight - gap) >= minTop;
-    double top;
-    if (placeAbove) {
-      top = bubbleOffset.dy - barHeight - gap;
-    } else {
-      top = bubbleOffset.dy + bubbleSize.height + gap;
-      if (top + barHeight > maxBottom) {
-        top = maxBottom - barHeight;
-      }
-    }
-
-    double left;
-    Alignment scaleAlignment;
-    if (mine) {
-      final bubbleRight = bubbleOffset.dx + bubbleSize.width;
-      left = bubbleRight - barWidth;
-      if (left + barWidth > screenSize.width - screenMargin) {
-        left = screenSize.width - screenMargin - barWidth;
-      }
-      if (left < screenMargin) {
-        left = screenMargin;
-      }
-      scaleAlignment = placeAbove ? Alignment.bottomRight : Alignment.topRight;
-    } else {
-      left = bubbleOffset.dx;
-      if (left < screenMargin) {
-        left = screenMargin;
-      }
-      if (left + barWidth > screenSize.width - screenMargin) {
-        left = screenSize.width - screenMargin - barWidth;
-      }
-      scaleAlignment = placeAbove ? Alignment.bottomLeft : Alignment.topLeft;
-    }
-
-    final curvedAnim = CurvedAnimation(
-      parent: animation,
-      curve: Curves.easeOutBack,
-      reverseCurve: Curves.easeInQuad,
-    );
-
-    return Stack(
-      children: [
-        Positioned.fill(
-          child: GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onTap: () => Navigator.of(context).pop(),
-          ),
-        ),
-        Positioned(
-          left: left,
-          top: top,
-          child: FadeTransition(
-            opacity: animation,
-            child: ScaleTransition(
-              scale: Tween<double>(begin: 0.45, end: 1.0).animate(curvedAnim),
-              alignment: scaleAlignment,
-              child: Material(
-                type: MaterialType.transparency,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: dark ? const Color(0xFF22242B) : Colors.white,
-                    borderRadius: BorderRadius.circular(36),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: dark ? 0.45 : 0.16),
-                        blurRadius: 18,
-                        offset: const Offset(0, 5),
-                      ),
-                    ],
-                    border: Border.all(
-                      color: dark
-                          ? Colors.white.withValues(alpha: 0.12)
-                          : Colors.black.withValues(alpha: 0.08),
-                      width: 0.7,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      for (final emoji in quickReactions)
-                        GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: () {
-                            HapticFeedback.lightImpact();
-                            onReactionSelected(emoji);
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: currentReaction == emoji
-                                  ? RelayColors.coral.withValues(alpha: 0.22)
-                                  : Colors.transparent,
-                            ),
-                            child: Text(
-                              emoji,
-                              style: const TextStyle(
-                                fontSize: 25,
-                                decoration: TextDecoration.none,
-                              ),
-                            ),
-                          ),
-                        ),
-                      Container(
-                        width: 1,
-                        height: 22,
-                        color: dark ? Colors.white24 : Colors.black12,
-                        margin: const EdgeInsets.symmetric(horizontal: 3),
-                      ),
-                      IconButton(
-                        tooltip: 'More reactions',
-                        padding: const EdgeInsets.all(5),
-                        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                        icon: Icon(
-                          CupertinoIcons.plus,
-                          size: 20,
-                          color: dark ? Colors.white70 : Colors.black54,
-                        ),
-                        onPressed: () {
-                          HapticFeedback.lightImpact();
-                          onMorePressed();
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
 
 class _TextMessage extends StatelessWidget {
   const _TextMessage({required this.message, required this.foreground});

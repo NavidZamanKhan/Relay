@@ -250,6 +250,15 @@ final class ChatHighlightCleared extends ChatEvent {
   const ChatHighlightCleared();
 }
 
+final class ChatMessageDeleted extends ChatEvent {
+  const ChatMessageDeleted({required this.chatId, required this.messageId});
+  final String chatId;
+  final String messageId;
+
+  @override
+  List<Object?> get props => [chatId, messageId];
+}
+
 final class ChatState extends Equatable {
   const ChatState({
     required this.conversations,
@@ -604,6 +613,20 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
     on<ChatHighlightCleared>((e, emit) {
       emit(state.copyWith(clearHighlightedMessage: true));
+    });
+
+    on<ChatMessageDeleted>((e, emit) {
+      final currentList = state.threads[e.chatId] ??
+          (state.activeId == e.chatId ? state.messages : const <RelayMessage>[]);
+      final updatedList =
+          currentList.where((m) => m.id != e.messageId).toList();
+      emit(
+        state.copyWith(
+          threads: {...state.threads, e.chatId: updatedList},
+          clearHighlightedMessage: state.highlightedMessageId == e.messageId,
+          clearReplyingTo: state.replyingTo?.id == e.messageId,
+        ),
+      );
     });
 
     on<ChatClosed>((e, emit) async {
