@@ -37,6 +37,15 @@ class ContactProfilePage extends StatelessWidget {
     if (userRepo != null && peerUid != null && peerUid!.isNotEmpty) {
       return StreamBuilder<UserProfile?>(
         stream: userRepo.watchUserProfile(peerUid!),
+        initialData: UserProfile(
+          uid: peerUid!,
+          phoneNumber: phoneNumber ?? '',
+          displayName: name,
+          about: about ?? '',
+          publicKey: '',
+          avatarUrl: avatarAsset,
+          isOnline: online,
+        ),
         builder: (context, snapshot) {
           final profile = snapshot.data;
           final liveName = (profile?.displayName.trim().isNotEmpty == true)

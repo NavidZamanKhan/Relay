@@ -11,6 +11,7 @@ import '../settings/settings_page.dart';
 import 'chat_bloc.dart';
 import 'chat_models.dart';
 import 'conversation_page.dart';
+import 'demo_data.dart';
 import 'new_relay_sheet.dart';
 import 'relay_receipt.dart';
 
@@ -43,6 +44,38 @@ class _ChatListPageState extends State<ChatListPage> {
       ),
       context,
     );
+    for (final c in DemoData.conversations) {
+      final a = c.avatarAsset;
+      if (a != null && a.isNotEmpty && a.startsWith('assets/')) {
+        precacheImage(
+          ResizeImage(
+            AssetImage(a),
+            width: RelayAvatar.avatarCacheWidth,
+          ),
+          context,
+        );
+      }
+    }
+    final myAvatar = context.read<AuthBloc>().state.avatarUrl;
+    if (myAvatar != null && myAvatar.isNotEmpty) {
+      if (myAvatar.startsWith('assets/')) {
+        precacheImage(
+          ResizeImage(
+            AssetImage(myAvatar),
+            width: RelayAvatar.avatarCacheWidth,
+          ),
+          context,
+        );
+      } else if (myAvatar.startsWith('http://') || myAvatar.startsWith('https://')) {
+        precacheImage(
+          ResizeImage(
+            NetworkImage(myAvatar),
+            width: RelayAvatar.avatarCacheWidth,
+          ),
+          context,
+        );
+      }
+    }
   }
 
   @override

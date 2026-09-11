@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
@@ -20,6 +21,25 @@ class RelayAvatar extends StatelessWidget {
   final double size;
   final bool online;
   final Object? heroTag;
+
+  /// Standardized cache width for all avatar instances to ensure a single shared
+  /// entry in Flutter's ImageCache across all list tiles, headers, and profile icons.
+  static const int avatarCacheWidth = 256;
+
+  /// In-memory cache for base64 decoded bytes so that MemoryImage uses the exact
+  /// same Uint8List reference across builds and route transitions.
+  static final Map<String, Uint8List> _base64Cache = <String, Uint8List>{};
+
+  static Uint8List _getOrCreateBase64Bytes(String rawBase64) {
+    final cached = _base64Cache[rawBase64];
+    if (cached != null) return cached;
+    final bytes = base64Decode(rawBase64);
+    if (_base64Cache.length > 100) {
+      _base64Cache.remove(_base64Cache.keys.first);
+    }
+    _base64Cache[rawBase64] = bytes;
+    return bytes;
+  }
 
   Widget _buildFallback(BuildContext context) {
     return ColoredBox(
@@ -43,7 +63,8 @@ class RelayAvatar extends StatelessWidget {
       return Image.network(
         src,
         fit: BoxFit.cover,
-        cacheWidth: (size * 3).round(),
+        gaplessPlayback: true,
+        cacheWidth: avatarCacheWidth,
         errorBuilder: (_, _, _) => _buildFallback(context),
       );
     }
@@ -51,11 +72,12 @@ class RelayAvatar extends StatelessWidget {
         (!src.startsWith('/') && !src.startsWith('assets/') && src.length > 200)) {
       final rawBase64 = src.contains(',') ? src.split(',').last : src;
       try {
-        final bytes = base64Decode(rawBase64);
+        final bytes = _getOrCreateBase64Bytes(rawBase64);
         return Image.memory(
           bytes,
           fit: BoxFit.cover,
-          cacheWidth: (size * 3).round(),
+          gaplessPlayback: true,
+          cacheWidth: avatarCacheWidth,
           errorBuilder: (_, _, _) => _buildFallback(context),
         );
       } catch (_) {}
@@ -64,7 +86,8 @@ class RelayAvatar extends StatelessWidget {
       return Image.asset(
         src,
         fit: BoxFit.cover,
-        cacheWidth: (size * 3).round(),
+        gaplessPlayback: true,
+        cacheWidth: avatarCacheWidth,
         errorBuilder: (_, _, _) => _buildFallback(context),
       );
     }
@@ -73,7 +96,8 @@ class RelayAvatar extends StatelessWidget {
       return Image.file(
         file,
         fit: BoxFit.cover,
-        cacheWidth: (size * 3).round(),
+        gaplessPlayback: true,
+        cacheWidth: avatarCacheWidth,
         errorBuilder: (_, _, _) => _buildFallback(context),
       );
     }

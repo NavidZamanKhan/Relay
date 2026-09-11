@@ -131,6 +131,15 @@ class _ConversationHeader extends StatelessWidget {
         effectivePeerUid.isNotEmpty) {
       return StreamBuilder<UserProfile?>(
         stream: userRepo.watchUserProfile(effectivePeerUid),
+        initialData: UserProfile(
+          uid: effectivePeerUid,
+          phoneNumber: '',
+          displayName: contactName,
+          about: '',
+          publicKey: '',
+          avatarUrl: avatarAsset,
+          isOnline: online,
+        ),
         builder: (context, snapshot) {
           final liveOnline = snapshot.data?.isOnline ?? online;
           final liveName =
@@ -218,17 +227,12 @@ class _ConversationHeader extends StatelessWidget {
               },
               child: Row(
                 children: [
-                  Hero(
-                    tag: 'avatar-$contactId',
-                    child: Material(
-                      type: MaterialType.transparency,
-                      child: RelayAvatar(
-                        name: displayName,
-                        asset: avatar ?? avatarAsset,
-                        online: false,
-                        size: 40,
-                      ),
-                    ),
+                  RelayAvatar(
+                    name: displayName,
+                    asset: avatar ?? avatarAsset,
+                    online: false,
+                    size: 40,
+                    heroTag: isGroup ? null : 'avatar-$contactId',
                   ),
                   const SizedBox(width: 10),
                   Expanded(
