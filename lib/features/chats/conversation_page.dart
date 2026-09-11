@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -505,26 +507,35 @@ class _TypingBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Align(
       alignment: Alignment.centerLeft,
       child: Container(
-        margin: const EdgeInsets.only(left: 18, top: 1, bottom: 10),
-        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
+        margin: const EdgeInsets.only(left: 18, top: 2, bottom: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        constraints: const BoxConstraints(minWidth: 64, minHeight: 38),
         decoration: BoxDecoration(
           color: Theme.of(context).colorScheme.surface,
           border: Border.all(
             color: Theme.of(context).dividerColor.withValues(alpha: .65),
           ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: isDark ? 0.25 : 0.04),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
           borderRadius: const BorderRadius.only(
-            topLeft: Radius.circular(16),
-            topRight: Radius.circular(16),
-            bottomRight: Radius.circular(16),
-            bottomLeft: Radius.circular(5),
+            topLeft: Radius.circular(18),
+            topRight: Radius.circular(18),
+            bottomRight: Radius.circular(18),
+            bottomLeft: Radius.circular(6),
           ),
         ),
         child: const Row(
           mainAxisSize: MainAxisSize.min,
-          children: [_Dot(delay: 0), _Dot(delay: 110), _Dot(delay: 220)],
+          children: [_Dot(delay: 0), _Dot(delay: 140), _Dot(delay: 280)],
         ),
       ),
     );
@@ -542,40 +553,49 @@ class _Dot extends StatefulWidget {
 class _DotState extends State<_Dot> with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   late final Animation<double> _opacity;
+  late final Animation<double> _scale;
+  Timer? _delayTimer;
 
   @override
   void initState() {
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 500),
+      duration: const Duration(milliseconds: 550),
     );
-    _opacity = Tween<double>(
-      begin: .24,
-      end: 1,
-    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
-    Future<void>.delayed(Duration(milliseconds: widget.delay), () {
-      if (mounted) _controller.repeat(reverse: true);
-    });
+    final curve = CurvedAnimation(parent: _controller, curve: Curves.easeInOut);
+    _opacity = Tween<double>(begin: .32, end: 1.0).animate(curve);
+    _scale = Tween<double>(begin: .84, end: 1.16).animate(curve);
+    if (widget.delay == 0) {
+      _controller.repeat(reverse: true);
+    } else {
+      _delayTimer = Timer(Duration(milliseconds: widget.delay), () {
+        if (mounted) _controller.repeat(reverse: true);
+      });
+    }
   }
 
   @override
   void dispose() {
+    _delayTimer?.cancel();
     _controller.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return FadeTransition(
-      opacity: _opacity,
-      child: Container(
-        width: 5,
-        height: 5,
-        margin: const EdgeInsets.symmetric(horizontal: 2),
-        decoration: const BoxDecoration(
-          color: RelayColors.coral,
-          shape: BoxShape.circle,
+    return ScaleTransition(
+      scale: _scale,
+      child: FadeTransition(
+        opacity: _opacity,
+        child: Container(
+          width: 7.5,
+          height: 7.5,
+          margin: const EdgeInsets.symmetric(horizontal: 3.5),
+          decoration: const BoxDecoration(
+            color: RelayColors.coral,
+            shape: BoxShape.circle,
+          ),
         ),
       ),
     );
