@@ -285,17 +285,24 @@ class _LiveMessage extends StatelessWidget {
   final bool grouped;
   @override
   Widget build(BuildContext context) =>
-      BlocSelector<ChatBloc, ChatState, (RelayMessage, bool)>(
+      BlocSelector<ChatBloc, ChatState, (RelayMessage, bool, bool, String?)>(
         selector: (s) {
           final m = s.messages.where((m) => m.id == fallback.id).firstOrNull ??
               fallback;
           final isHighlighted = s.highlightedMessageId == fallback.id;
-          return (m, isHighlighted);
+          final activeConv =
+              s.conversations.where((c) => c.id == s.activeId).firstOrNull;
+          final isGroup = activeConv?.isGroup ?? false;
+          final senderName =
+              m.senderName ?? activeConv?.participantNames?[m.senderId];
+          return (m, isHighlighted, isGroup, senderName);
         },
         builder: (_, data) => MessageBubble(
           message: data.$1,
           grouped: grouped,
           isHighlighted: data.$2,
+          showSenderAttribution: data.$3 && !data.$1.isMine,
+          senderDisplayName: data.$4,
         ),
       );
 }

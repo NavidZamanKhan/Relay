@@ -310,23 +310,30 @@ class _NewRelayBody extends StatelessWidget {
                   onPressed: state.name.trim().isEmpty || state.members.isEmpty
                       ? null
                       : () {
+                          final bloc = context.read<ChatBloc>();
+                          final currentUserId = bloc.currentUserId ?? 'current_user';
                           final id =
-                              'group-${DateTime.now().microsecondsSinceEpoch}';
+                              'group_${DateTime.now().millisecondsSinceEpoch}';
+                          final allParticipants =
+                              <String>{currentUserId, ...state.members}.toList();
                           final c = Conversation(
                             id: id,
                             name: state.name.trim(),
                             avatarAsset: null,
-                            lastMessage: '',
+                            lastMessage: 'You created this group',
                             timeLabel: 'Now',
+                            lastMessageAt: DateTime.now(),
                             isGroup: true,
+                            adminIds: [currentUserId],
+                            participantIds: allParticipants,
                           );
-                          final bloc = context.read<ChatBloc>();
                           final nav = Navigator.of(context);
                           bloc.add(
                             ChatGroupCreated(
                               id,
                               c.name,
                               state.members.toList(),
+                              adminId: currentUserId,
                             ),
                           );
                           nav.pop();

@@ -113,4 +113,51 @@ abstract interface class IChatRepository {
     required String userId,
     required String? reaction,
   });
+
+  /// Creates a group conversation in Firestore with [adminId] as initial admin.
+  Future<Conversation> createGroupConversation({
+    required String name,
+    required List<String> memberIds,
+    required String adminId,
+    String? description,
+    String? avatarUrl,
+  });
+
+  /// Updates group metadata (title, description, avatar).
+  Future<void> updateGroupInfo({
+    required String groupId,
+    String? name,
+    String? description,
+    String? avatarUrl,
+  });
+
+  /// Promotes [targetUserId] to an admin in [groupId].
+  Future<void> promoteToAdmin({
+    required String groupId,
+    required String targetUserId,
+  });
+
+  /// Demotes [targetUserId] from admin status in [groupId].
+  Future<void> demoteAdmin({
+    required String groupId,
+    required String targetUserId,
+  });
+
+  /// Adds [newMembers] to [groupId].
+  Future<void> addGroupMembers({
+    required String groupId,
+    required List<RelayContact> newMembers,
+  });
+
+  /// Removes [targetUserId] from [groupId].
+  Future<void> removeGroupMember({
+    required String groupId,
+    required String targetUserId,
+  });
+
+  /// Allows [currentUserId] to leave [groupId], auto-promoting another member if last admin.
+  Future<void> leaveGroup({
+    required String groupId,
+    required String currentUserId,
+  });
 }

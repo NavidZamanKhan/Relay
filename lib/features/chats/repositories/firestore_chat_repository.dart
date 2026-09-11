@@ -263,7 +263,22 @@ class FirestoreChatRepository implements IChatRepository {
                 continue;
               }
             }
+
+            // Fallback for group messages or peers without shared secrets
+            try {
+              final decodedBytes = base64Decode(rawMessage.encryptedPayload!);
+              final decodedText = utf8.decode(decodedBytes);
+              messages.add(rawMessage.copyWith(text: decodedText));
+              continue;
+            } catch (_) {}
           } catch (_) {
+            // Check if encryptedPayload was fallback base64 encoded text
+            try {
+              final decodedBytes = base64Decode(rawMessage.encryptedPayload!);
+              final decodedText = utf8.decode(decodedBytes);
+              messages.add(rawMessage.copyWith(text: decodedText));
+              continue;
+            } catch (_) {}
             // Decryption failure fallback: show guarded preview
             messages.add(rawMessage.copyWith(text: '[Encrypted message]'));
             continue;
@@ -344,17 +359,6 @@ class FirestoreChatRepository implements IChatRepository {
     final messageRef = _chatsCollection.doc(effectiveChatId).collection('messages').doc(message.id);
     final chatRef = _chatsCollection.doc(effectiveChatId);
 
-    final payload = message.copyWith(
-      senderId: user.uid,
-      recipientId: effectiveRecipientId,
-      encryptedPayload: ciphertext,
-      nonce: nonce,
-      delivery: DeliveryStage.sent,
-    );
-
-    final chatDoc = await chatRef.get();
-    final batch = _firestore.batch();
-
     String currentUserName = 'Me';
     try {
       if (_userDisplayNameCache.containsKey(user.uid)) {
@@ -366,6 +370,18 @@ class FirestoreChatRepository implements IChatRepository {
         _userDisplayNameCache[user.uid] = currentUserName;
       }
     } catch (_) {}
+
+    final payload = message.copyWith(
+      senderId: user.uid,
+      senderName: currentUserName,
+      recipientId: effectiveRecipientId,
+      encryptedPayload: ciphertext,
+      nonce: nonce,
+      delivery: DeliveryStage.sent,
+    );
+
+    final chatDoc = await chatRef.get();
+    final batch = _firestore.batch();
 
     String peerName = 'Relay Contact';
     if (effectiveRecipientId != null) {
@@ -1416,5 +1432,193 @@ class FirestoreChatRepository implements IChatRepository {
     } else {
       await messageRef.update({'reactions.$userId': FieldValue.delete()});
     }
+  }
+
+  @override
+  Future<Conversation> createGroupConversation({
+    required String name,
+    required List<String> memberIds,
+    required String adminId,
+    String? description,
+    String? avatarUrl,
+  }) async {
+    final effectiveGroupId =
+        'group_${DateTime.now().millisecondsSinceEpoch}_${math.Random().nextInt(9999)}';
+    final allParticipants = <String>{adminId, ...memberIds}.toList();
+    final groupRef = _chatsCollection.doc(effectiveGroupId);
+
+    final participantNames = <String, String>{};
+    final participantAvatars = <String, String>{};
+
+    for (final uid in allParticipants) {
+      if (_userDisplayNameCache.containsKey(uid)) {
+        participantNames[uid] = _userDisplayNameCache[uid]!;
+      } else {
+        try {
+          final doc = await _usersCollection.doc(uid).get();
+          final dName = (doc.data()?['displayName'] as String?)?.trim();
+          if (dName != null && dName.isNotEmpty) {
+            _userDisplayNameCache[uid] = dName;
+            participantNames[uid] = dName;
+          }
+        } catch (_) {}
+      }
+
+      final av = await _getOrFetchUserAvatar(uid);
+      if (av != null && av.isNotEmpty) {
+        participantAvatars[uid] = av;
+      }
+    }
+
+    final unreadMap = <String, int>{
+      for (final uid in allParticipants) uid: 0,
+    };
+
+    final groupData = <String, dynamic>{
+      'id': effectiveGroupId,
+      'name': name.trim(),
+      if (description != null && description.trim().isNotEmpty)
+        'description': description.trim(),
+      if (avatarUrl != null && avatarUrl.trim().isNotEmpty) ...{
+        'avatarUrl': avatarUrl.trim(),
+        'avatarAsset': avatarUrl.trim(),
+      },
+      'isGroup': true,
+      'participantIds': allParticipants,
+      'adminIds': [adminId],
+      'createdAt': FieldValue.serverTimestamp(),
+      'lastMessage': 'Group created',
+      'lastMessageAt': FieldValue.serverTimestamp(),
+      'previewKind': MessageKind.text.toDbString(),
+      'unreadCount': unreadMap,
+      if (participantNames.isNotEmpty) 'participantNames': participantNames,
+      if (participantAvatars.isNotEmpty) 'participantAvatars': participantAvatars,
+    };
+
+    await groupRef.set(groupData);
+
+    return Conversation(
+      id: effectiveGroupId,
+      name: name.trim(),
+      description: description?.trim(),
+      avatarAsset: avatarUrl?.trim(),
+      lastMessage: 'Group created',
+      timeLabel: 'Now',
+      lastMessageAt: DateTime.now(),
+      participantIds: allParticipants,
+      participantNames: participantNames,
+      isGroup: true,
+      adminIds: [adminId],
+    );
+  }
+
+  @override
+  Future<void> updateGroupInfo({
+    required String groupId,
+    String? name,
+    String? description,
+    String? avatarUrl,
+  }) async {
+    final updates = <String, dynamic>{};
+    if (name != null && name.trim().isNotEmpty) {
+      updates['name'] = name.trim();
+    }
+    if (description != null) {
+      updates['description'] = description.trim();
+    }
+    if (avatarUrl != null && avatarUrl.trim().isNotEmpty) {
+      updates['avatarUrl'] = avatarUrl.trim();
+      updates['avatarAsset'] = avatarUrl.trim();
+    }
+    if (updates.isNotEmpty) {
+      await _chatsCollection.doc(groupId).update(updates);
+    }
+  }
+
+  @override
+  Future<void> promoteToAdmin({
+    required String groupId,
+    required String targetUserId,
+  }) async {
+    await _chatsCollection.doc(groupId).update({
+      'adminIds': FieldValue.arrayUnion([targetUserId]),
+    });
+  }
+
+  @override
+  Future<void> demoteAdmin({
+    required String groupId,
+    required String targetUserId,
+  }) async {
+    await _chatsCollection.doc(groupId).update({
+      'adminIds': FieldValue.arrayRemove([targetUserId]),
+    });
+  }
+
+  @override
+  Future<void> addGroupMembers({
+    required String groupId,
+    required List<RelayContact> newMembers,
+  }) async {
+    final newMemberIds = newMembers.map((m) => m.id).toList();
+    if (newMemberIds.isEmpty) return;
+
+    final updates = <String, dynamic>{
+      'participantIds': FieldValue.arrayUnion(newMemberIds),
+    };
+
+    for (final member in newMembers) {
+      updates['participantNames.${member.id}'] = member.displayName;
+      if (member.avatarUrl != null && member.avatarUrl!.isNotEmpty) {
+        updates['participantAvatars.${member.id}'] = member.avatarUrl!;
+      }
+    }
+
+    await _chatsCollection.doc(groupId).update(updates);
+  }
+
+  @override
+  Future<void> removeGroupMember({
+    required String groupId,
+    required String targetUserId,
+  }) async {
+    await _chatsCollection.doc(groupId).update({
+      'participantIds': FieldValue.arrayRemove([targetUserId]),
+      'adminIds': FieldValue.arrayRemove([targetUserId]),
+    });
+  }
+
+  @override
+  Future<void> leaveGroup({
+    required String groupId,
+    required String currentUserId,
+  }) async {
+    final docRef = _chatsCollection.doc(groupId);
+    final docSnapshot = await docRef.get();
+    if (!docSnapshot.exists) return;
+
+    final data = docSnapshot.data() ?? {};
+    final participants = (data['participantIds'] as List<dynamic>?)
+            ?.map((e) => e.toString())
+            .toList() ??
+        [];
+    final admins = (data['adminIds'] as List<dynamic>?)
+            ?.map((e) => e.toString())
+            .toList() ??
+        [];
+
+    final remainingParticipants =
+        participants.where((id) => id != currentUserId).toList();
+    var remainingAdmins = admins.where((id) => id != currentUserId).toList();
+
+    // If leaving member was admin and no admins remain, auto-promote next member
+    if (remainingAdmins.isEmpty && remainingParticipants.isNotEmpty) {
+      remainingAdmins = [remainingParticipants.first];
+    }
+
+    await docRef.update({
+      'participantIds': remainingParticipants,
+      'adminIds': remainingAdmins,
+    });
   }
 }

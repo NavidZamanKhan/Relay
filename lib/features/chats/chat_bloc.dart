@@ -225,11 +225,106 @@ final class ChatMuteToggled extends ChatEvent {
 }
 
 final class ChatGroupCreated extends ChatEvent {
-  const ChatGroupCreated(this.id, this.name, this.members);
-  final String id, name;
+  const ChatGroupCreated(
+    this.id,
+    this.name,
+    this.members, {
+    this.description,
+    this.avatarUrl,
+    this.adminId,
+  });
+
+  final String id;
+  final String name;
   final List<String> members;
+  final String? description;
+  final String? avatarUrl;
+  final String? adminId;
+
   @override
-  List<Object?> get props => [id, name, members];
+  List<Object?> get props => [id, name, members, description, avatarUrl, adminId];
+}
+
+final class ChatGroupInfoUpdated extends ChatEvent {
+  const ChatGroupInfoUpdated({
+    required this.groupId,
+    this.name,
+    this.description,
+    this.avatarUrl,
+  });
+
+  final String groupId;
+  final String? name;
+  final String? description;
+  final String? avatarUrl;
+
+  @override
+  List<Object?> get props => [groupId, name, description, avatarUrl];
+}
+
+final class ChatGroupMemberPromoted extends ChatEvent {
+  const ChatGroupMemberPromoted({
+    required this.groupId,
+    required this.targetUserId,
+  });
+
+  final String groupId;
+  final String targetUserId;
+
+  @override
+  List<Object?> get props => [groupId, targetUserId];
+}
+
+final class ChatGroupMemberDemoted extends ChatEvent {
+  const ChatGroupMemberDemoted({
+    required this.groupId,
+    required this.targetUserId,
+  });
+
+  final String groupId;
+  final String targetUserId;
+
+  @override
+  List<Object?> get props => [groupId, targetUserId];
+}
+
+final class ChatGroupMembersAdded extends ChatEvent {
+  const ChatGroupMembersAdded({
+    required this.groupId,
+    required this.newMembers,
+  });
+
+  final String groupId;
+  final List<RelayContact> newMembers;
+
+  @override
+  List<Object?> get props => [groupId, newMembers];
+}
+
+final class ChatGroupMemberRemoved extends ChatEvent {
+  const ChatGroupMemberRemoved({
+    required this.groupId,
+    required this.targetUserId,
+  });
+
+  final String groupId;
+  final String targetUserId;
+
+  @override
+  List<Object?> get props => [groupId, targetUserId];
+}
+
+final class ChatGroupLeft extends ChatEvent {
+  const ChatGroupLeft({
+    required this.groupId,
+    required this.currentUserId,
+  });
+
+  final String groupId;
+  final String currentUserId;
+
+  @override
+  List<Object?> get props => [groupId, currentUserId];
 }
 
 final class ChatReplyTargetSet extends ChatEvent {
@@ -1075,21 +1170,177 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
         ),
       ),
     );
-    on<ChatGroupCreated>((e, emit) {
+    on<ChatGroupCreated>((e, emit) async {
+      final effectiveAdminId = e.adminId ?? _currentUserId ?? 'current_user';
+      final allParticipants = <String>{effectiveAdminId, ...e.members}.toList();
       final c = Conversation(
         id: e.id,
         name: e.name,
-        avatarAsset: null,
+        description: e.description,
+        avatarAsset: e.avatarUrl,
         lastMessage: 'You created this group',
         timeLabel: 'Now',
+        lastMessageAt: DateTime.now(),
+        participantIds: allParticipants,
         isGroup: true,
+        adminIds: [effectiveAdminId],
       );
       emit(
         state.copyWith(
           conversations: [...state.conversations, c],
           threads: {...state.threads, e.id: []},
+          activeId: e.id,
         ),
       );
+
+      if (_chatRepository != null && !_demoMode) {
+        try {
+          await _chatRepository.createGroupConversation(
+            name: e.name,
+            memberIds: e.members,
+            adminId: effectiveAdminId,
+            description: e.description,
+            avatarUrl: e.avatarUrl,
+          );
+        } catch (_) {}
+      }
+    });
+
+    on<ChatGroupInfoUpdated>((e, emit) async {
+      final updatedConvs = state.conversations.map((c) {
+        if (c.id != e.groupId) return c;
+        return c.copyWith(
+          name: (e.name != null && e.name!.trim().isNotEmpty)
+              ? e.name!.trim()
+              : c.name,
+          description: e.description ?? c.description,
+          avatarAsset: e.avatarUrl ?? c.avatarAsset,
+        );
+      }).toList();
+
+      emit(state.copyWith(conversations: updatedConvs));
+
+      if (_chatRepository != null && !_demoMode) {
+        try {
+          await _chatRepository.updateGroupInfo(
+            groupId: e.groupId,
+            name: e.name,
+            description: e.description,
+            avatarUrl: e.avatarUrl,
+          );
+        } catch (_) {}
+      }
+    });
+
+    on<ChatGroupMemberPromoted>((e, emit) async {
+      final updatedConvs = state.conversations.map((c) {
+        if (c.id != e.groupId) return c;
+        final currentAdmins = List<String>.from(c.adminIds);
+        if (!currentAdmins.contains(e.targetUserId)) {
+          currentAdmins.add(e.targetUserId);
+        }
+        return c.copyWith(adminIds: currentAdmins);
+      }).toList();
+
+      emit(state.copyWith(conversations: updatedConvs));
+
+      if (_chatRepository != null && !_demoMode) {
+        try {
+          await _chatRepository.promoteToAdmin(
+            groupId: e.groupId,
+            targetUserId: e.targetUserId,
+          );
+        } catch (_) {}
+      }
+    });
+
+    on<ChatGroupMemberDemoted>((e, emit) async {
+      final updatedConvs = state.conversations.map((c) {
+        if (c.id != e.groupId) return c;
+        final currentAdmins =
+            c.adminIds.where((id) => id != e.targetUserId).toList();
+        return c.copyWith(adminIds: currentAdmins);
+      }).toList();
+
+      emit(state.copyWith(conversations: updatedConvs));
+
+      if (_chatRepository != null && !_demoMode) {
+        try {
+          await _chatRepository.demoteAdmin(
+            groupId: e.groupId,
+            targetUserId: e.targetUserId,
+          );
+        } catch (_) {}
+      }
+    });
+
+    on<ChatGroupMembersAdded>((e, emit) async {
+      final updatedConvs = state.conversations.map((c) {
+        if (c.id != e.groupId) return c;
+        final currentParticipants = List<String>.from(c.participantIds);
+        final currentNames = Map<String, String>.from(c.participantNames ?? {});
+        for (final m in e.newMembers) {
+          if (!currentParticipants.contains(m.id)) {
+            currentParticipants.add(m.id);
+          }
+          currentNames[m.id] = m.displayName;
+        }
+        return c.copyWith(
+          participantIds: currentParticipants,
+          participantNames: currentNames,
+        );
+      }).toList();
+
+      emit(state.copyWith(conversations: updatedConvs));
+
+      if (_chatRepository != null && !_demoMode) {
+        try {
+          await _chatRepository.addGroupMembers(
+            groupId: e.groupId,
+            newMembers: e.newMembers,
+          );
+        } catch (_) {}
+      }
+    });
+
+    on<ChatGroupMemberRemoved>((e, emit) async {
+      final updatedConvs = state.conversations.map((c) {
+        if (c.id != e.groupId) return c;
+        final currentParticipants =
+            c.participantIds.where((id) => id != e.targetUserId).toList();
+        final currentAdmins =
+            c.adminIds.where((id) => id != e.targetUserId).toList();
+        return c.copyWith(
+          participantIds: currentParticipants,
+          adminIds: currentAdmins,
+        );
+      }).toList();
+
+      emit(state.copyWith(conversations: updatedConvs));
+
+      if (_chatRepository != null && !_demoMode) {
+        try {
+          await _chatRepository.removeGroupMember(
+            groupId: e.groupId,
+            targetUserId: e.targetUserId,
+          );
+        } catch (_) {}
+      }
+    });
+
+    on<ChatGroupLeft>((e, emit) async {
+      final updatedConvs =
+          state.conversations.where((c) => c.id != e.groupId).toList();
+      emit(state.copyWith(conversations: updatedConvs));
+
+      if (_chatRepository != null && !_demoMode) {
+        try {
+          await _chatRepository.leaveGroup(
+            groupId: e.groupId,
+            currentUserId: e.currentUserId,
+          );
+        } catch (_) {}
+      }
     });
   }
 

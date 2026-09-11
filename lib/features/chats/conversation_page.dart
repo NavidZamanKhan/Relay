@@ -8,6 +8,7 @@ import '../../core/widgets/relay_avatar.dart';
 import 'chat_bloc.dart';
 import 'chat_models.dart';
 import 'contact_profile_page.dart';
+import 'views/group_details_page.dart';
 import 'relay_message_list.dart';
 import 'message_composer.dart';
 import 'signal_background.dart';
@@ -168,6 +169,14 @@ class _ConversationHeader extends StatelessWidget {
     String? about,
     String? phoneNumber,
   }) {
+    final activeConv = context
+        .read<ChatBloc>()
+        .state
+        .conversations
+        .where((c) => c.id == contactId)
+        .firstOrNull;
+    final isGroup = contactId.startsWith('group_') || (activeConv?.isGroup ?? false);
+
     return Container(
       height: 64,
       padding: const EdgeInsets.fromLTRB(3, 4, 5, 4),
@@ -186,51 +195,101 @@ class _ConversationHeader extends StatelessWidget {
             icon: const Icon(CupertinoIcons.chevron_left, size: 23),
             tooltip: 'Back',
           ),
-          Hero(
-            tag: 'avatar-$contactId',
-            child: Material(
-              type: MaterialType.transparency,
-              child: RelayAvatar(
-                name: displayName,
-                asset: avatar ?? avatarAsset,
-                online: false,
-                size: 40,
-              ),
-            ),
-          ),
-          const SizedBox(width: 10),
           Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  displayName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: 1),
-                BlocSelector<ChatBloc, ChatState, bool>(
-                  selector: (state) => state.typing,
-                  builder: (context, typing) => AnimatedSwitcher(
-                    duration: RelayMotion.quick,
-                    child: Text(
-                      typing
-                          ? 'typing…'
-                          : (isOnline ? 'Online' : 'Last seen recently'),
-                      key: ValueKey(typing),
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: typing || isOnline
-                            ? RelayColors.mint
-                            : Theme.of(context).textTheme.bodySmall?.color,
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w600,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () {
+                if (isGroup) {
+                  GroupDetailsPage.open(context, contactId);
+                } else {
+                  Navigator.of(context).push(
+                    RelayMotion.route(
+                      ContactProfilePage(
+                        name: displayName,
+                        avatarAsset: avatar ?? avatarAsset,
+                        online: isOnline,
+                        peerUid: peerUid,
+                        about: about,
+                        phoneNumber: phoneNumber,
+                      ),
+                    ),
+                  );
+                }
+              },
+              child: Row(
+                children: [
+                  Hero(
+                    tag: 'avatar-$contactId',
+                    child: Material(
+                      type: MaterialType.transparency,
+                      child: RelayAvatar(
+                        name: displayName,
+                        asset: avatar ?? avatarAsset,
+                        online: false,
+                        size: 40,
                       ),
                     ),
                   ),
-                ),
-              ],
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          displayName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: 1),
+                        BlocSelector<ChatBloc, ChatState, (bool, int)>(
+                          selector: (state) {
+                            final c = state.conversations
+                                .where((conv) => conv.id == contactId)
+                                .firstOrNull;
+                            return (state.typing, c?.memberCount ?? 0);
+                          },
+                          builder: (context, data) {
+                            final typing = data.$1;
+                            final count = data.$2;
+                            final String subtitleText;
+                            if (typing) {
+                              subtitleText = 'typing…';
+                            } else if (isGroup) {
+                              subtitleText =
+                                  count > 0 ? '$count members' : 'Group';
+                            } else {
+                              subtitleText =
+                                  isOnline ? 'Online' : 'Last seen recently';
+                            }
+                            return AnimatedSwitcher(
+                              duration: RelayMotion.quick,
+                              child: Text(
+                                subtitleText,
+                                key: ValueKey(subtitleText),
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(
+                                      color: typing || (isOnline && !isGroup)
+                                          ? RelayColors.mint
+                                          : Theme.of(context)
+                                              .textTheme
+                                              .bodySmall
+                                              ?.color,
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                              ),
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
           IconButton(
@@ -242,6 +301,7 @@ class _ConversationHeader extends StatelessWidget {
               peerUid: peerUid,
               about: about,
               phoneNumber: phoneNumber,
+              isGroup: isGroup,
             ),
             icon: const Icon(CupertinoIcons.ellipsis, size: 22),
             tooltip: 'Conversation options',
@@ -259,6 +319,7 @@ class _ConversationHeader extends StatelessWidget {
     String? peerUid,
     String? about,
     String? phoneNumber,
+    required bool isGroup,
   }) {
     showModalBottomSheet<void>(
       context: context,
@@ -269,22 +330,26 @@ class _ConversationHeader extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             _MenuTile(
-              icon: CupertinoIcons.person,
-              label: 'View profile',
+              icon: isGroup ? CupertinoIcons.info : CupertinoIcons.person,
+              label: isGroup ? 'Group info' : 'View profile',
               onTap: () {
                 Navigator.pop(sheetContext);
-                Navigator.of(context).push(
-                  RelayMotion.route(
-                    ContactProfilePage(
-                      name: displayName,
-                      avatarAsset: avatar,
-                      online: isOnline,
-                      peerUid: peerUid,
-                      about: about,
-                      phoneNumber: phoneNumber,
+                if (isGroup) {
+                  GroupDetailsPage.open(context, contactId);
+                } else {
+                  Navigator.of(context).push(
+                    RelayMotion.route(
+                      ContactProfilePage(
+                        name: displayName,
+                        avatarAsset: avatar,
+                        online: isOnline,
+                        peerUid: peerUid,
+                        about: about,
+                        phoneNumber: phoneNumber,
+                      ),
                     ),
-                  ),
-                );
+                  );
+                }
               },
             ),
             _MenuTile(

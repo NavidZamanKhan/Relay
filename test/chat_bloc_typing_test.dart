@@ -124,6 +124,64 @@ class MockChatRepository implements IChatRepository {
     required String userId,
     required String? reaction,
   }) async {}
+
+  @override
+  Future<Conversation> createGroupConversation({
+    required String name,
+    required List<String> memberIds,
+    required String adminId,
+    String? description,
+    String? avatarUrl,
+  }) async =>
+      Conversation(
+        id: 'group_test',
+        name: name,
+        description: description,
+        avatarAsset: avatarUrl,
+        lastMessage: '',
+        timeLabel: 'now',
+        isGroup: true,
+        adminIds: [adminId],
+        participantIds: [adminId, ...memberIds],
+      );
+
+  @override
+  Future<void> updateGroupInfo({
+    required String groupId,
+    String? name,
+    String? description,
+    String? avatarUrl,
+  }) async {}
+
+  @override
+  Future<void> promoteToAdmin({
+    required String groupId,
+    required String targetUserId,
+  }) async {}
+
+  @override
+  Future<void> demoteAdmin({
+    required String groupId,
+    required String targetUserId,
+  }) async {}
+
+  @override
+  Future<void> addGroupMembers({
+    required String groupId,
+    required List<RelayContact> newMembers,
+  }) async {}
+
+  @override
+  Future<void> removeGroupMember({
+    required String groupId,
+    required String targetUserId,
+  }) async {}
+
+  @override
+  Future<void> leaveGroup({
+    required String groupId,
+    required String currentUserId,
+  }) async {}
 }
 
 void main() {

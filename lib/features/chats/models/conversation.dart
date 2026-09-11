@@ -18,6 +18,7 @@ class Conversation extends Equatable {
     this.recipientId,
     this.recipientPublicKey,
     this.participantNames,
+    this.participantAvatars,
     this.online = false,
     this.unread = 0,
     this.previewKind = MessageKind.text,
@@ -26,6 +27,8 @@ class Conversation extends Equatable {
     this.isGroup = false,
     this.muted = false,
     this.isPeerTyping = false,
+    this.adminIds = const [],
+    this.description,
   });
 
   final String id;
@@ -38,6 +41,7 @@ class Conversation extends Equatable {
   final String? recipientId;
   final String? recipientPublicKey;
   final Map<String, String>? participantNames;
+  final Map<String, String>? participantAvatars;
   final bool online;
   final int unread;
   final MessageKind previewKind;
@@ -46,6 +50,14 @@ class Conversation extends Equatable {
   final bool isGroup;
   final bool muted;
   final bool isPeerTyping;
+  final List<String> adminIds;
+  final String? description;
+
+  /// Returns true if [userId] is registered as an admin for this conversation.
+  bool isAdmin(String? userId) => userId != null && adminIds.contains(userId);
+
+  /// Returns the total member count.
+  int get memberCount => participantIds.length;
 
   Conversation copyWith({
     String? id,
@@ -58,6 +70,7 @@ class Conversation extends Equatable {
     String? recipientId,
     String? recipientPublicKey,
     Map<String, String>? participantNames,
+    Map<String, String>? participantAvatars,
     bool? online,
     int? unread,
     MessageKind? previewKind,
@@ -66,6 +79,8 @@ class Conversation extends Equatable {
     bool? isGroup,
     bool? muted,
     bool? isPeerTyping,
+    List<String>? adminIds,
+    String? description,
     bool clearDelivery = false,
   }) =>
       Conversation(
@@ -79,6 +94,7 @@ class Conversation extends Equatable {
         recipientId: recipientId ?? this.recipientId,
         recipientPublicKey: recipientPublicKey ?? this.recipientPublicKey,
         participantNames: participantNames ?? this.participantNames,
+        participantAvatars: participantAvatars ?? this.participantAvatars,
         online: online ?? this.online,
         unread: unread ?? this.unread,
         previewKind: previewKind ?? this.previewKind,
@@ -87,6 +103,8 @@ class Conversation extends Equatable {
         isGroup: isGroup ?? this.isGroup,
         muted: muted ?? this.muted,
         isPeerTyping: isPeerTyping ?? this.isPeerTyping,
+        adminIds: adminIds ?? this.adminIds,
+        description: description ?? this.description,
       );
 
   /// Serializes conversation state for Firestore storage.
@@ -95,6 +113,7 @@ class Conversation extends Equatable {
       'participantIds': participantIds,
       if (recipientId != null) 'recipientId': recipientId,
       if (participantNames != null) 'participantNames': participantNames,
+      if (participantAvatars != null) 'participantAvatars': participantAvatars,
       'lastMessage': lastMessage,
       'previewKind': previewKind.toDbString(),
       'lastMessageAt': useServerTimestamp
@@ -103,6 +122,10 @@ class Conversation extends Equatable {
       if (delivery != null) 'delivery': delivery!.toDbString(),
       'isGroup': isGroup,
       if (isGroup) 'name': name,
+      if (avatarAsset != null) 'avatarUrl': avatarAsset,
+      if (avatarAsset != null) 'avatarAsset': avatarAsset,
+      if (adminIds.isNotEmpty) 'adminIds': adminIds,
+      if (description != null) 'description': description,
     };
   }
 
@@ -163,6 +186,14 @@ class Conversation extends Equatable {
         ? DeliveryStage.fromString(deliveryStr)
         : null;
 
+    final rawAdmins = map['adminIds'] ?? map['admins'];
+    final adminIds = (rawAdmins as List<dynamic>?)
+            ?.map((e) => e.toString())
+            .toList() ??
+        (map['adminId'] != null ? [map['adminId'].toString()] : const <String>[]);
+
+    final description = map['description'] as String?;
+
     final unreadMap = map['unreadCount'] ?? map['unreadCounts'];
     int unread = 0;
     if (unreadMap is Map && currentUserId != null) {
@@ -183,11 +214,15 @@ class Conversation extends Equatable {
         (typingMap[otherParticipantId] == true);
 
     final rawAvatars = map['participantAvatars'] as Map<dynamic, dynamic>?;
-    final resolvedAvatar = fallbackAvatar ??
+    final parsedAvatars = rawAvatars
+        ?.map((k, v) => MapEntry(k.toString(), v.toString()));
+    final resolvedAvatar = (isGroup ? (map['avatarUrl'] as String? ?? map['avatarAsset'] as String?) : null) ??
+        fallbackAvatar ??
         (otherParticipantId != null && rawAvatars != null
             ? rawAvatars[otherParticipantId]?.toString()
             : null) ??
-        map['avatarAsset'] as String?;
+        map['avatarAsset'] as String? ??
+        map['avatarUrl'] as String?;
 
     return Conversation(
       id: id,
@@ -200,6 +235,7 @@ class Conversation extends Equatable {
       recipientId: otherParticipantId ?? map['recipientId'] as String?,
       recipientPublicKey: resolvedPublicKey,
       participantNames: parsedNames,
+      participantAvatars: parsedAvatars,
       online: (map['online'] as bool?) ?? false,
       unread: unread,
       previewKind: MessageKind.fromString(map['previewKind'] as String?),
@@ -208,6 +244,8 @@ class Conversation extends Equatable {
       isGroup: isGroup,
       muted: (map['muted'] as bool?) ?? false,
       isPeerTyping: isPeerTyping,
+      adminIds: adminIds,
+      description: description,
     );
   }
 
@@ -242,6 +280,7 @@ class Conversation extends Equatable {
         recipientId,
         recipientPublicKey,
         participantNames,
+        participantAvatars,
         online,
         unread,
         previewKind,
@@ -250,5 +289,7 @@ class Conversation extends Equatable {
         isGroup,
         muted,
         isPeerTyping,
+        adminIds,
+        description,
       ];
 }

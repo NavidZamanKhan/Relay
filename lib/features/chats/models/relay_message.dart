@@ -28,10 +28,12 @@ class RelayMessage extends Equatable {
     this.delivery = DeliveryStage.read,
     this.replyTo,
     this.replyToId,
+    this.senderName,
   });
 
   final String id;
   final String senderId;
+  final String? senderName;
   final String? recipientId;
   final DateTime sentAt;
   final MessageKind kind;
@@ -74,10 +76,12 @@ class RelayMessage extends Equatable {
     DeliveryStage? delivery,
     String? replyTo,
     String? replyToId,
+    String? senderName,
   }) =>
       RelayMessage(
         id: id ?? this.id,
         senderId: senderId ?? this.senderId,
+        senderName: senderName ?? this.senderName,
         recipientId: recipientId ?? this.recipientId,
         sentAt: sentAt ?? this.sentAt,
         kind: kind ?? this.kind,
@@ -103,6 +107,7 @@ class RelayMessage extends Equatable {
   Map<String, dynamic> toMap({bool useServerTimestamp = false}) {
     return {
       'senderId': senderId,
+      if (senderName != null) 'senderName': senderName,
       if (recipientId != null) 'recipientId': recipientId,
       'kind': kind.toDbString(),
       'sentAt': useServerTimestamp
@@ -191,6 +196,7 @@ class RelayMessage extends Equatable {
       delivery: delivery,
       replyTo: map['replyTo'] as String?,
       replyToId: map['replyToId'] as String?,
+      senderName: map['senderName'] as String?,
     );
   }
 
@@ -198,6 +204,7 @@ class RelayMessage extends Equatable {
   List<Object?> get props => [
         id,
         senderId,
+        senderName,
         recipientId,
         sentAt,
         kind,

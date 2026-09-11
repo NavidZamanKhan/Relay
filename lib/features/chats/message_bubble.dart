@@ -26,10 +26,14 @@ class MessageBubble extends StatelessWidget {
     required this.message,
     this.grouped = false,
     this.isHighlighted = false,
+    this.showSenderAttribution = false,
+    this.senderDisplayName,
   });
 
   final bool grouped;
   final bool isHighlighted;
+  final bool showSenderAttribution;
+  final String? senderDisplayName;
 
   final RelayMessage message;
 
@@ -106,25 +110,44 @@ class MessageBubble extends StatelessWidget {
                                 width: .65,
                               ),
                       ),
-                      child: switch (message.kind) {
-                        MessageKind.text => _TextMessage(
-                          message: message,
-                          foreground: foreground,
-                        ),
-                        MessageKind.image => _ImageMessage(
-                          message: message,
-                          foreground: foreground,
-                          onLongPress: () => _showAnchoredReactions(bubbleContext, message, mine),
-                        ),
-                        MessageKind.voice => _VoiceMessage(
-                          message: message,
-                          foreground: foreground,
-                        ),
-                        MessageKind.document => _DocumentMessage(
-                          message: message,
-                          foreground: foreground,
-                        ),
-                      },
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (showSenderAttribution && !mine)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 3.5),
+                              child: Text(
+                                senderDisplayName ?? message.senderName ?? 'Member',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: _getAuthorColor(message.senderId),
+                                  letterSpacing: 0.1,
+                                ),
+                              ),
+                            ),
+                          switch (message.kind) {
+                            MessageKind.text => _TextMessage(
+                              message: message,
+                              foreground: foreground,
+                            ),
+                            MessageKind.image => _ImageMessage(
+                              message: message,
+                              foreground: foreground,
+                              onLongPress: () => _showAnchoredReactions(bubbleContext, message, mine),
+                            ),
+                            MessageKind.voice => _VoiceMessage(
+                              message: message,
+                              foreground: foreground,
+                            ),
+                            MessageKind.document => _DocumentMessage(
+                              message: message,
+                              foreground: foreground,
+                            ),
+                          },
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -188,6 +211,22 @@ class MessageBubble extends StatelessWidget {
     final current = message.reactions?[myId];
     final next = current == heart ? null : heart;
     bloc.add(ChatMessageReactionToggled(chatId, message.id, next ?? heart));
+  }
+
+  static Color _getAuthorColor(String senderId) {
+    const palette = [
+      Color(0xFF2563EB), // Blue
+      Color(0xFF059669), // Emerald
+      Color(0xFFD97706), // Amber
+      Color(0xFF7C3AED), // Purple
+      Color(0xFFDB2777), // Pink
+      Color(0xFF0891B2), // Cyan
+      Color(0xFFEA580C), // Orange
+      Color(0xFF4F46E5), // Indigo
+    ];
+    if (senderId.isEmpty) return palette[0];
+    final hash = senderId.codeUnits.fold(0, (acc, c) => acc + c);
+    return palette[hash % palette.length];
   }
 
   void _showAnchoredReactions(
