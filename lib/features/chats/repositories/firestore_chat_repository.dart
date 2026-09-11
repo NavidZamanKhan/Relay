@@ -200,16 +200,26 @@ class FirestoreChatRepository implements IChatRepository {
           }
         }
 
-        conversations.add(
-          Conversation.fromMap(
-            data,
-            doc.id,
-            currentUserId: currentUserId,
-            fallbackName: resolvedFallbackName,
-            fallbackAvatar: resolvedFallbackAvatar,
-            recipientPublicKey: resolvedPublicKey,
-          ),
+        final conv = Conversation.fromMap(
+          data,
+          doc.id,
+          currentUserId: currentUserId,
+          fallbackName: resolvedFallbackName,
+          fallbackAvatar: resolvedFallbackAvatar,
+          recipientPublicKey: resolvedPublicKey,
         );
+
+        // Proactively self-heal stale unread count in Firestore if current user authored the latest message
+        if (conv.lastMessageSenderId == currentUserId &&
+            (data['unreadCount.$currentUserId'] != null ||
+                (data['unreadCount'] is Map &&
+                    ((data['unreadCount'][currentUserId] as num?)?.toInt() ?? 0) > 0))) {
+          _chatsCollection.doc(doc.id).update({
+            'unreadCount.$currentUserId': 0,
+          }).catchError((_) {});
+        }
+
+        conversations.add(conv);
       }
 
       // Sort locally by lastMessageAt descending with null safety
@@ -515,6 +525,7 @@ class FirestoreChatRepository implements IChatRepository {
       'lastMessageAt': FieldValue.serverTimestamp(),
       'lastMessageSenderId': user.uid,
       'delivery': DeliveryStage.sent.toDbString(),
+      'unreadCount.${user.uid}': 0,
       if (effectiveRecipientId != null)
         'unreadCount.$effectiveRecipientId': FieldValue.increment(1),
       if (effectiveRecipientId != null && effectivePublicKey.isNotEmpty)
@@ -1169,6 +1180,7 @@ class FirestoreChatRepository implements IChatRepository {
         'previewKind': 'voice',
         'delivery': 'sent',
         'lastMessageDelivery': 'sent',
+        'unreadCount.${user.uid}': 0,
         if (effectiveRecipientId != null)
           'unreadCount.$effectiveRecipientId': FieldValue.increment(1),
         if (effectiveRecipientId != null && effectivePublicKey.isNotEmpty)
@@ -1446,6 +1458,7 @@ class FirestoreChatRepository implements IChatRepository {
         'lastMessageSenderId': user.uid,
         'delivery': DeliveryStage.sent.toDbString(),
         'lastMessageDelivery': DeliveryStage.sent.toDbString(),
+        'unreadCount.${user.uid}': 0,
         if (effectiveRecipientId != null) ...{
           'unreadCount.$effectiveRecipientId': FieldValue.increment(1),
           'unreadCounts.$effectiveRecipientId': FieldValue.increment(1),

@@ -245,6 +245,35 @@ void main() {
       expect(serialized['lastMessageSenderId'], equals('user_navid'));
     });
 
+    test('Conversation.fromMap forces unread to 0 if currentUserId is lastMessageSenderId', () {
+      final mapWithStaleCount = {
+        'participantIds': ['user_navid', 'user_sadman'],
+        'lastMessage': 'You oxymoron',
+        'lastMessageSenderId': 'user_navid',
+        'unreadCount': {
+          'user_navid': 9, // Stale legacy counter in Firestore
+          'user_sadman': 13,
+        },
+        'unreadCount.user_navid': 9,
+      };
+
+      // For Navid (the sender of the last message)
+      final convNavid = Conversation.fromMap(
+        mapWithStaleCount,
+        'chat_navid_sadman',
+        currentUserId: 'user_navid',
+      );
+      expect(convNavid.unread, equals(0), reason: 'Sender must never have unread count on own message');
+
+      // For Sadman (the recipient of the last message)
+      final convSadman = Conversation.fromMap(
+        mapWithStaleCount,
+        'chat_navid_sadman',
+        currentUserId: 'user_sadman',
+      );
+      expect(convSadman.unread, equals(13));
+    });
+
     test('directChatId returns deterministic sorted composite ID', () {
       final id1 = Conversation.directChatId('uid_alice', 'uid_bob');
       final id2 = Conversation.directChatId('uid_bob', 'uid_alice');

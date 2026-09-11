@@ -240,6 +240,12 @@ class Conversation extends Equatable {
     final lastMessageSenderId =
         (map['lastMessageSenderId'] ?? map['lastSenderId']) as String?;
 
+    if (lastMessageSenderId != null &&
+        currentUserId != null &&
+        lastMessageSenderId == currentUserId) {
+      unread = 0;
+    }
+
     return Conversation(
       id: id,
       name: name,

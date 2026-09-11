@@ -668,9 +668,16 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
         }
       }
 
+      final sanitizedConvs = [
+        for (final c in e.conversations)
+          (c.lastMessageSenderId != null && c.lastMessageSenderId == _currentUserId)
+              ? (c.unread != 0 ? c.copyWith(unread: 0) : c)
+              : c,
+      ];
+
       emit(
         state.copyWith(
-          conversations: e.conversations,
+          conversations: sanitizedConvs,
           typingIds: activeTyping,
           incomingNotification: incomingNotification,
         ),
