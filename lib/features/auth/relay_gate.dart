@@ -8,6 +8,7 @@ import 'auth_bloc.dart';
 import 'otp_page.dart';
 import 'phone_entry_page.dart';
 import 'profile_setup_page.dart';
+import 'widgets/relay_splash_screen.dart';
 
 import 'presence_observer.dart';
 import 'repositories/i_user_repository.dart';
@@ -62,6 +63,7 @@ class _RelayGateState extends State<RelayGate> {
       buildWhen: (previous, current) => previous.step != current.step,
       builder: (context, state) {
         final page = switch (state.step) {
+          AuthStep.initial => const RelaySplashScreen(key: ValueKey('splash')),
           AuthStep.phone => const PhoneEntryPage(key: ValueKey('phone')),
           AuthStep.otp => const OtpPage(key: ValueKey('otp')),
           AuthStep.profile => const ProfileSetupPage(key: ValueKey('profile')),

@@ -176,7 +176,7 @@ void main() {
       authRepo.dispose();
     });
 
-    test('initializes at phone step when unauthenticated', () {
+    test('initializes at initial splash step and transitions to phone when unauthenticated', () async {
       final bloc = AuthBloc(
         authRepository: authRepo,
         userRepository: userRepo,
@@ -184,8 +184,18 @@ void main() {
         previewAuthenticated: false,
       );
 
-      expect(bloc.state.step, AuthStep.phone);
-      bloc.close();
+      expect(bloc.state.step, AuthStep.initial);
+
+      authRepo.emitUser(null);
+
+      await expectLater(
+        bloc.stream,
+        emitsThrough(
+          predicate<AuthState>((state) => state.step == AuthStep.phone),
+        ),
+      );
+
+      await bloc.close();
     });
 
     test('transitions to complete when authenticated session has existing profile', () async {

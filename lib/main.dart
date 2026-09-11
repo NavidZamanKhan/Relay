@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'app.dart';
 import 'app_bloc.dart';
 import 'core/crypto/crypto_service.dart';
+import 'core/services/app_settings_storage.dart';
 import 'features/auth/auth_bloc.dart';
 import 'features/auth/repositories/firebase_auth_repository.dart';
 import 'features/auth/repositories/firestore_user_repository.dart';
@@ -16,6 +17,9 @@ import 'firebase_options.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  const settingsStorage = AppSettingsStorage();
+  final savedAppState = await settingsStorage.loadSettings();
+
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
@@ -33,7 +37,12 @@ Future<void> main() async {
       ],
       child: MultiBlocProvider(
         providers: [
-          BlocProvider(create: (_) => AppBloc()),
+          BlocProvider(
+            create: (_) => AppBloc(
+              initialState: savedAppState,
+              storage: settingsStorage,
+            ),
+          ),
           BlocProvider(
             create: (_) => AuthBloc(
               authRepository: authRepository,

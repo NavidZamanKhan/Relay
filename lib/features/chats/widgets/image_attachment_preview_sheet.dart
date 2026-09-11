@@ -128,7 +128,11 @@ class _ImageAttachmentPreviewSheetState
                     child: Container(
                       decoration: BoxDecoration(
                         color: Colors.white.withValues(alpha: 0.16),
-                        borderRadius: BorderRadius.circular(22),
+                        borderRadius: BorderRadius.circular(24),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.18),
+                          width: 1.0,
+                        ),
                       ),
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: TextField(
@@ -138,17 +142,25 @@ class _ImageAttachmentPreviewSheetState
                         minLines: 1,
                         style: const TextStyle(
                           color: Colors.white,
-                          fontSize: 15,
+                          fontSize: 15.5,
+                          height: 1.3,
                         ),
                         cursorColor: RelayColors.coral,
-                        decoration: const InputDecoration(
+                        decoration: InputDecoration(
+                          isDense: true,
+                          filled: false,
+                          fillColor: Colors.transparent,
                           hintText: 'Add a caption...',
                           hintStyle: TextStyle(
-                            color: Colors.white54,
-                            fontSize: 15,
+                            color: Colors.white.withValues(alpha: 0.55),
+                            fontSize: 15.5,
                           ),
                           border: InputBorder.none,
-                          contentPadding: EdgeInsets.symmetric(vertical: 12),
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          errorBorder: InputBorder.none,
+                          disabledBorder: InputBorder.none,
+                          contentPadding: const EdgeInsets.symmetric(vertical: 12),
                         ),
                       ),
                     ),

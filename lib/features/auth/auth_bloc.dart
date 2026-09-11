@@ -158,7 +158,7 @@ final class _AuthUserChanged extends AuthEvent {
 
 // --- Auth State ---
 
-enum AuthStep { phone, otp, profile, complete }
+enum AuthStep { initial, phone, otp, profile, complete }
 
 final class AuthState extends Equatable {
   const AuthState({
@@ -275,7 +275,10 @@ final class AuthBloc extends Bloc<AuthEvent, AuthState> {
         _customFirestore = firestore,
         super(
           AuthState(
-            step: previewAuthenticated ? AuthStep.complete : AuthStep.phone,
+            step: previewAuthenticated
+                ? AuthStep.complete
+                : (authRepository == null ? AuthStep.phone : AuthStep.initial),
+            userId: authRepository?.currentUser?.uid,
           ),
         ) {
     on<AuthCountrySelected>(_onCountrySelected);
@@ -302,6 +305,9 @@ final class AuthBloc extends Bloc<AuthEvent, AuthState> {
       _authStateSubscription = _authRepository.authStateChanges.listen((user) {
         add(_AuthUserChanged(user));
       });
+      if (_authRepository.currentUser != null) {
+        add(_AuthUserChanged(_authRepository.currentUser));
+      }
     }
   }
 
@@ -836,7 +842,9 @@ final class AuthBloc extends Bloc<AuthEvent, AuthState> {
       return;
     }
 
-    emit(state.copyWith(userId: user.uid, isVerifying: true));
+    if (state.step != AuthStep.complete || state.userId != user.uid) {
+      emit(state.copyWith(userId: user.uid, isVerifying: true));
+    }
 
     UserProfile? profile;
     try {

@@ -2,6 +2,8 @@ import 'package:equatable/equatable.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'core/services/app_settings_storage.dart';
+
 sealed class AppEvent extends Equatable {
   const AppEvent();
   @override
@@ -59,13 +61,29 @@ final class AppState extends Equatable {
 }
 
 final class AppBloc extends Bloc<AppEvent, AppState> {
-  AppBloc() : super(const AppState()) {
-    on<AppThemeChanged>((e, emit) => emit(state.copyWith(themeMode: e.mode)));
-    on<AppPreferenceChanged>(
-      (e, emit) => emit(
-        state.copyWith(preferences: {...state.preferences, e.key: e.value}),
-      ),
-    );
-    on<AppCacheCleared>((e, emit) => emit(state.copyWith(cacheMb: 0)));
+  AppBloc({
+    AppState initialState = const AppState(),
+    AppSettingsStorage? storage,
+  })  : _storage = storage ?? const AppSettingsStorage(),
+        super(initialState) {
+    on<AppThemeChanged>((e, emit) {
+      final updated = state.copyWith(themeMode: e.mode);
+      emit(updated);
+      _storage.saveSettings(updated);
+    });
+    on<AppPreferenceChanged>((e, emit) {
+      final updated = state.copyWith(
+        preferences: {...state.preferences, e.key: e.value},
+      );
+      emit(updated);
+      _storage.saveSettings(updated);
+    });
+    on<AppCacheCleared>((e, emit) {
+      final updated = state.copyWith(cacheMb: 0);
+      emit(updated);
+      _storage.saveSettings(updated);
+    });
   }
+
+  final AppSettingsStorage _storage;
 }
