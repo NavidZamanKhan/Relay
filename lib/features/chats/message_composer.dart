@@ -746,75 +746,90 @@ class _QuotedReplyBar extends StatelessWidget {
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(10, 7, 4, 7),
                 child: Row(
-                    children: [
-                      const Icon(
-                        CupertinoIcons.reply,
-                        size: 15,
-                        color: RelayColors.coral,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Expanded(
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () {
+                          HapticFeedback.selectionClick();
+                          context
+                              .read<ChatBloc>()
+                              .add(ChatLocateMessageRequested(replyingTo.id));
+                        },
+                        child: Row(
                           children: [
-                            Text(
-                              title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: RelayColors.coral,
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w700,
-                              ),
+                            const Icon(
+                              CupertinoIcons.reply,
+                              size: 15,
+                              color: RelayColors.coral,
                             ),
-                            const SizedBox(height: 2),
-                            Row(
-                              children: [
-                                if (mediaIcon != null) ...[
-                                  Icon(
-                                    mediaIcon,
-                                    size: 13,
-                                    color: dark
-                                        ? RelayColors.moonMuted
-                                        : RelayColors.inkSoft,
-                                  ),
-                                  const SizedBox(width: 4),
-                                ],
-                                Expanded(
-                                  child: Text(
-                                    snippet,
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    title,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      color: Theme.of(context)
-                                          .textTheme
-                                          .bodySmall
-                                          ?.color,
-                                      fontSize: 13,
+                                    style: const TextStyle(
+                                      color: RelayColors.coral,
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w700,
                                     ),
                                   ),
-                                ),
-                              ],
+                                  const SizedBox(height: 2),
+                                  Row(
+                                    children: [
+                                      if (mediaIcon != null) ...[
+                                        Icon(
+                                          mediaIcon,
+                                          size: 13,
+                                          color: dark
+                                              ? RelayColors.moonMuted
+                                              : RelayColors.inkSoft,
+                                        ),
+                                        const SizedBox(width: 4),
+                                      ],
+                                      Expanded(
+                                        child: Text(
+                                          snippet,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            color: Theme.of(context)
+                                                .textTheme
+                                                .bodySmall
+                                                ?.color,
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
                             ),
                           ],
                         ),
                       ),
-                      IconButton(
-                        tooltip: 'Cancel reply',
-                        icon: const Icon(CupertinoIcons.xmark, size: 16),
-                        onPressed: onDismiss,
-                        visualDensity: VisualDensity.compact,
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(
-                          minWidth: 32,
-                          minHeight: 32,
-                        ),
+                    ),
+                    IconButton(
+                      tooltip: 'Cancel reply',
+                      icon: const Icon(CupertinoIcons.xmark, size: 16),
+                      onPressed: onDismiss,
+                      visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                        minWidth: 32,
+                        minHeight: 32,
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
+            ),
             ],
           ),
         ),

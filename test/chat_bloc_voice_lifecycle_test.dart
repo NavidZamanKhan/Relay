@@ -42,6 +42,7 @@ class _ControlledChatRepository extends Fake implements IChatRepository {
     required String recipientPublicKey,
     String? messageId,
     String? replyTo,
+    String? replyToId,
   }) {
     sentMessageId = messageId;
     return sendCompleted.future;

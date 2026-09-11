@@ -88,6 +88,7 @@ class MockChatRepository implements IChatRepository {
     required String recipientPublicKey,
     String? messageId,
     String? replyTo,
+    String? replyToId,
   }) async {
     voiceCalls.add((chatId: chatId, replyTo: replyTo));
   }
@@ -110,6 +111,7 @@ class MockChatRepository implements IChatRepository {
     String? caption,
     String? messageId,
     String? replyTo,
+    String? replyToId,
   }) async {
     imageCalls.add((chatId: chatId, replyTo: replyTo, caption: caption));
   }

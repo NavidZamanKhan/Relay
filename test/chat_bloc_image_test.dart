@@ -27,6 +27,7 @@ class _ImageTestChatRepository extends Fake implements IChatRepository {
     String? caption,
     String? messageId,
     String? replyTo,
+    String? replyToId,
   }) async {
     sendImageCalls.add((
       chatId: chatId,

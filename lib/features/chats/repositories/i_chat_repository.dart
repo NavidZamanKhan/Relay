@@ -70,6 +70,7 @@ abstract interface class IChatRepository {
     required String recipientPublicKey,
     String? messageId,
     String? replyTo,
+    String? replyToId,
   });
 
   /// Resolves the local playback file for a voice message, downloading
@@ -92,6 +93,7 @@ abstract interface class IChatRepository {
     String? caption,
     String? messageId,
     String? replyTo,
+    String? replyToId,
   });
 
   /// Resolves the local image file for an image message, downloading from

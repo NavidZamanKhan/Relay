@@ -34,6 +34,7 @@ class RelayMessageList extends StatefulWidget {
 class _RelayMessageListState extends State<RelayMessageList> {
   var _listKey = GlobalKey<AnimatedListState>();
   final _scroll = ScrollController();
+  final Map<String, GlobalKey> _itemKeys = {};
   late List<RelayMessage> _rows;
   double? _anchorPixels, _anchorMax;
   Timer? _anchorTimer;
@@ -55,6 +56,7 @@ class _RelayMessageListState extends State<RelayMessageList> {
   void _sync(ChatState next) {
     final ids = _rows.map((m) => m.id).toSet();
     final newIds = next.messages.map((m) => m.id).toSet();
+    _itemKeys.removeWhere((id, _) => !newIds.contains(id));
     if (!newIds.containsAll(ids) || next.messages.length < _rows.length) {
       setState(() {
         _rows = next.messages.reversed.toList();
@@ -115,11 +117,69 @@ class _RelayMessageListState extends State<RelayMessageList> {
     return false;
   }
 
+  void _scrollToMessage(String targetId) {
+    final index = _rows.indexWhere((m) => m.id == targetId);
+    if (index == -1) return;
+
+    final key = _itemKeys[targetId];
+    final currentContext = key?.currentContext;
+
+    if (currentContext != null) {
+      Scrollable.ensureVisible(
+        currentContext,
+        duration: const Duration(milliseconds: 380),
+        curve: Curves.easeInOutCubic,
+        alignment: 0.5,
+      );
+    } else if (_scroll.hasClients) {
+      // In reversed AnimatedList, index 0 is at offset 0 (bottom).
+      const estimatedRowHeight = 78.0;
+      final estimatedOffset = (index * estimatedRowHeight)
+          .clamp(0.0, _scroll.position.maxScrollExtent);
+
+      _scroll
+          .animateTo(
+            estimatedOffset,
+            duration: const Duration(milliseconds: 320),
+            curve: Curves.easeInOutCubic,
+          )
+          .then((_) {
+            if (!mounted) return;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              final targetContext = _itemKeys[targetId]?.currentContext;
+              if (targetContext != null && mounted) {
+                Scrollable.ensureVisible(
+                  targetContext,
+                  duration: const Duration(milliseconds: 260),
+                  curve: Curves.easeOutCubic,
+                  alignment: 0.5,
+                );
+              }
+            });
+          });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return BlocListener<ChatBloc, ChatState>(
-      listenWhen: (a, b) => a.messages != b.messages,
-      listener: (_, s) => _sync(s),
+    return MultiBlocListener(
+      listeners: [
+        BlocListener<ChatBloc, ChatState>(
+          listenWhen: (a, b) => a.messages != b.messages,
+          listener: (_, s) => _sync(s),
+        ),
+        BlocListener<ChatBloc, ChatState>(
+          listenWhen: (a, b) =>
+              a.highlightedMessageId != b.highlightedMessageId &&
+              b.highlightedMessageId != null,
+          listener: (_, s) {
+            final targetId = s.highlightedMessageId;
+            if (targetId != null) {
+              _scrollToMessage(targetId);
+            }
+          },
+        ),
+      ],
       child: Column(
         children: [
           Expanded(
@@ -153,8 +213,9 @@ class _RelayMessageListState extends State<RelayMessageList> {
                         older.senderId == m.senderId &&
                         m.sentAt.difference(older.sentAt).inMinutes.abs() < 4 &&
                         !newDay;
+                    final itemKey = _itemKeys.putIfAbsent(m.id, () => GlobalKey());
                     final row = RepaintBoundary(
-                      key: ValueKey(m.id),
+                      key: itemKey,
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -224,10 +285,17 @@ class _LiveMessage extends StatelessWidget {
   final bool grouped;
   @override
   Widget build(BuildContext context) =>
-      BlocSelector<ChatBloc, ChatState, RelayMessage>(
-        selector: (s) =>
-            s.messages.where((m) => m.id == fallback.id).firstOrNull ??
-            fallback,
-        builder: (_, m) => MessageBubble(message: m, grouped: grouped),
+      BlocSelector<ChatBloc, ChatState, (RelayMessage, bool)>(
+        selector: (s) {
+          final m = s.messages.where((m) => m.id == fallback.id).firstOrNull ??
+              fallback;
+          final isHighlighted = s.highlightedMessageId == fallback.id;
+          return (m, isHighlighted);
+        },
+        builder: (_, data) => MessageBubble(
+          message: data.$1,
+          grouped: grouped,
+          isHighlighted: data.$2,
+        ),
       );
 }

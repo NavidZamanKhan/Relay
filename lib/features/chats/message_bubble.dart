@@ -19,9 +19,15 @@ import 'chat_models.dart';
 import 'relay_receipt.dart';
 
 class MessageBubble extends StatelessWidget {
-  const MessageBubble({super.key, required this.message, this.grouped = false});
+  const MessageBubble({
+    super.key,
+    required this.message,
+    this.grouped = false,
+    this.isHighlighted = false,
+  });
 
   final bool grouped;
+  final bool isHighlighted;
 
   final RelayMessage message;
 
@@ -42,6 +48,13 @@ class MessageBubble extends StatelessWidget {
         reactionCounts[r] = (reactionCounts[r] ?? 0) + 1;
       }
     }
+
+    final bubbleBorderRadius = BorderRadius.only(
+      topLeft: const Radius.circular(19),
+      topRight: const Radius.circular(19),
+      bottomLeft: Radius.circular(mine ? 19 : 5),
+      bottomRight: Radius.circular(mine ? 5 : 19),
+    );
 
     // MessageBubble itself is intentionally static. Its parent AnimatedList
     // animates only a genuinely inserted row; delivery and playback rebuilds do
@@ -69,49 +82,48 @@ class MessageBubble extends StatelessWidget {
                   behavior: HitTestBehavior.opaque,
                   onLongPress: () => _showAnchoredReactions(bubbleContext, message, mine),
                   onDoubleTap: () => _quickHeartReaction(context, message),
-                  child: Container(
-                    constraints: BoxConstraints(
-                      maxWidth:
-                          MediaQuery.sizeOf(context).width *
-                          (message.kind == MessageKind.image ? .72 : .79),
+                  child: _BubbleHighlightWrapper(
+                    isHighlighted: isHighlighted,
+                    borderRadius: bubbleBorderRadius,
+                    child: Container(
+                      constraints: BoxConstraints(
+                        maxWidth:
+                            MediaQuery.sizeOf(context).width *
+                            (message.kind == MessageKind.image ? .72 : .79),
+                      ),
+                      padding: message.kind == MessageKind.image
+                          ? const EdgeInsets.all(4)
+                          : const EdgeInsets.fromLTRB(14, 10, 12, 8),
+                      decoration: BoxDecoration(
+                        color: bubbleColor,
+                        borderRadius: bubbleBorderRadius,
+                        border: mine || isVoice
+                            ? null
+                            : Border.all(
+                                color: Theme.of(context).dividerColor.withValues(alpha: .72),
+                                width: .65,
+                              ),
+                      ),
+                      child: switch (message.kind) {
+                        MessageKind.text => _TextMessage(
+                          message: message,
+                          foreground: foreground,
+                        ),
+                        MessageKind.image => _ImageMessage(
+                          message: message,
+                          foreground: foreground,
+                          onLongPress: () => _showAnchoredReactions(bubbleContext, message, mine),
+                        ),
+                        MessageKind.voice => _VoiceMessage(
+                          message: message,
+                          foreground: foreground,
+                        ),
+                        MessageKind.document => _DocumentMessage(
+                          message: message,
+                          foreground: foreground,
+                        ),
+                      },
                     ),
-                    padding: message.kind == MessageKind.image
-                        ? const EdgeInsets.all(4)
-                        : const EdgeInsets.fromLTRB(14, 10, 12, 8),
-                    decoration: BoxDecoration(
-                      color: bubbleColor,
-                      borderRadius: BorderRadius.only(
-                        topLeft: const Radius.circular(19),
-                        topRight: const Radius.circular(19),
-                        bottomLeft: Radius.circular(mine ? 19 : 5),
-                        bottomRight: Radius.circular(mine ? 5 : 19),
-                      ),
-                      border: mine || isVoice
-                          ? null
-                          : Border.all(
-                              color: Theme.of(context).dividerColor.withValues(alpha: .72),
-                              width: .65,
-                            ),
-                    ),
-                    child: switch (message.kind) {
-                      MessageKind.text => _TextMessage(
-                        message: message,
-                        foreground: foreground,
-                      ),
-                      MessageKind.image => _ImageMessage(
-                        message: message,
-                        foreground: foreground,
-                        onLongPress: () => _showAnchoredReactions(bubbleContext, message, mine),
-                      ),
-                      MessageKind.voice => _VoiceMessage(
-                        message: message,
-                        foreground: foreground,
-                      ),
-                      MessageKind.document => _DocumentMessage(
-                        message: message,
-                        foreground: foreground,
-                      ),
-                    },
                   ),
                 ),
                 if (reactionCounts.isNotEmpty)
@@ -442,6 +454,7 @@ class _TextMessage extends StatelessWidget {
           _ReplyPreview(
             replyTo: message.replyTo!,
             foreground: foreground,
+            onTap: () => _locateTargetMessage(context, message),
           ),
           const SizedBox(height: 8),
         ],
@@ -482,6 +495,7 @@ class _ImageMessage extends StatelessWidget {
             child: _ReplyPreview(
               replyTo: message.replyTo!,
               foreground: foreground,
+              onTap: () => _locateTargetMessage(context, message),
             ),
           ),
         ],
@@ -558,6 +572,7 @@ class _VoiceMessage extends StatelessWidget {
                   child: _ReplyPreview(
                     replyTo: message.replyTo!,
                     foreground: foreground,
+                    onTap: () => _locateTargetMessage(context, message),
                   ),
                 ),
               ],
@@ -1258,42 +1273,165 @@ class _PlaybackGlyph extends CustomPainter {
       oldDelegate.playing != playing || oldDelegate.color != color;
 }
 
+void _locateTargetMessage(BuildContext context, RelayMessage message) {
+  HapticFeedback.selectionClick();
+  final chatBloc = context.read<ChatBloc>();
+  String? targetId = message.replyToId;
+  if (targetId == null || targetId.isEmpty) {
+    final snippet = message.replyTo?.trim();
+    if (snippet != null && snippet.isNotEmpty) {
+      final match = chatBloc.state.messages.where((m) {
+        if (m.text != null && m.text!.trim() == snippet) return true;
+        if (m.kind == MessageKind.image &&
+            (snippet == 'Photo' || (m.text?.trim() == snippet))) {
+          return true;
+        }
+        if (m.kind == MessageKind.voice &&
+            (snippet == 'Voice note' || snippet == 'Voice message')) {
+          return true;
+        }
+        return false;
+      }).firstOrNull;
+      targetId = match?.id;
+    }
+  }
+  if (targetId != null && targetId.isNotEmpty) {
+    chatBloc.add(ChatLocateMessageRequested(targetId));
+  }
+}
+
+class _BubbleHighlightWrapper extends StatefulWidget {
+  const _BubbleHighlightWrapper({
+    required this.isHighlighted,
+    required this.borderRadius,
+    required this.child,
+  });
+
+  final bool isHighlighted;
+  final BorderRadius borderRadius;
+  final Widget child;
+
+  @override
+  State<_BubbleHighlightWrapper> createState() => _BubbleHighlightWrapperState();
+}
+
+class _BubbleHighlightWrapperState extends State<_BubbleHighlightWrapper>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _glowAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    );
+    _glowAnimation = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 0.0, end: 1.0)
+            .chain(CurveTween(curve: Curves.easeOutQuad)),
+        weight: 18,
+      ),
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 1.0, end: 0.0)
+            .chain(CurveTween(curve: Curves.easeInQuad)),
+        weight: 82,
+      ),
+    ]).animate(_controller);
+
+    if (widget.isHighlighted) {
+      _controller.forward(from: 0.0);
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _BubbleHighlightWrapper oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isHighlighted && !oldWidget.isHighlighted) {
+      _controller.forward(from: 0.0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _glowAnimation,
+      builder: (context, child) {
+        final progress = _glowAnimation.value;
+        return Stack(
+          children: [
+            child!,
+            if (progress > 0.005)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: RelayColors.coral.withValues(alpha: 0.26 * progress),
+                      borderRadius: widget.borderRadius,
+                      border: Border.all(
+                        color: RelayColors.coral.withValues(alpha: 0.85 * progress),
+                        width: 1.8,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+      child: widget.child,
+    );
+  }
+}
+
 class _ReplyPreview extends StatelessWidget {
   const _ReplyPreview({
     required this.replyTo,
     required this.foreground,
+    this.onTap,
   });
 
   final String replyTo;
   final Color foreground;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 6),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: .07),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: foreground.withValues(alpha: .12),
-          width: .6,
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        margin: const EdgeInsets.only(bottom: 6),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: .07),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: foreground.withValues(alpha: .12),
+            width: .6,
+          ),
         ),
-      ),
-      child: IntrinsicHeight(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            ClipRRect(
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(9),
-                bottomLeft: Radius.circular(9),
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              ClipRRect(
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(9),
+                  bottomLeft: Radius.circular(9),
+                ),
+                child: Container(
+                  width: 3,
+                  color: RelayColors.coral,
+                ),
               ),
-              child: Container(
-                width: 3,
-                color: RelayColors.coral,
-              ),
-            ),
               Expanded(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(8, 5, 8, 5),
@@ -1301,16 +1439,16 @@ class _ReplyPreview extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Row(
+                      Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(
+                          const Icon(
                             CupertinoIcons.reply,
                             size: 11,
                             color: RelayColors.coral,
                           ),
-                          SizedBox(width: 4),
-                          Text(
+                          const SizedBox(width: 4),
+                          const Text(
                             'Reply',
                             style: TextStyle(
                               color: RelayColors.coral,
@@ -1318,6 +1456,14 @@ class _ReplyPreview extends StatelessWidget {
                               fontWeight: FontWeight.w700,
                             ),
                           ),
+                          if (onTap != null) ...[
+                            const Spacer(),
+                            Icon(
+                              CupertinoIcons.chevron_right,
+                              size: 10,
+                              color: foreground.withValues(alpha: .45),
+                            ),
+                          ],
                         ],
                       ),
                       const SizedBox(height: 2),
@@ -1338,6 +1484,7 @@ class _ReplyPreview extends StatelessWidget {
             ],
           ),
         ),
+      ),
     );
   }
 }

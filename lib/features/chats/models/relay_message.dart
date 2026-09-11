@@ -27,6 +27,7 @@ class RelayMessage extends Equatable {
     this.isMine = false,
     this.delivery = DeliveryStage.read,
     this.replyTo,
+    this.replyToId,
   });
 
   final String id;
@@ -49,6 +50,7 @@ class RelayMessage extends Equatable {
   final bool isMine;
   final DeliveryStage delivery;
   final String? replyTo;
+  final String? replyToId;
 
   RelayMessage copyWith({
     String? id,
@@ -71,6 +73,7 @@ class RelayMessage extends Equatable {
     bool? isMine,
     DeliveryStage? delivery,
     String? replyTo,
+    String? replyToId,
   }) =>
       RelayMessage(
         id: id ?? this.id,
@@ -93,6 +96,7 @@ class RelayMessage extends Equatable {
         isMine: isMine ?? this.isMine,
         delivery: delivery ?? this.delivery,
         replyTo: replyTo ?? this.replyTo,
+        replyToId: replyToId ?? this.replyToId,
       );
 
   /// Serializes message state to Firestore document schema.
@@ -121,6 +125,7 @@ class RelayMessage extends Equatable {
       if (imageData != null) 'imageData': imageData,
       if (reactions != null && reactions!.isNotEmpty) 'reactions': reactions,
       if (replyTo != null) 'replyTo': replyTo,
+      if (replyToId != null) 'replyToId': replyToId,
     };
   }
 
@@ -185,6 +190,7 @@ class RelayMessage extends Equatable {
       isMine: currentUserId != null ? (sender == currentUserId) : false,
       delivery: delivery,
       replyTo: map['replyTo'] as String?,
+      replyToId: map['replyToId'] as String?,
     );
   }
 
@@ -210,5 +216,6 @@ class RelayMessage extends Equatable {
         isMine,
         delivery,
         replyTo,
+        replyToId,
       ];
 }

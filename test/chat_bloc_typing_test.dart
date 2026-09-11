@@ -85,6 +85,7 @@ class MockChatRepository implements IChatRepository {
     required String recipientPublicKey,
     String? messageId,
     String? replyTo,
+    String? replyToId,
   }) async {}
 
   @override
@@ -105,6 +106,7 @@ class MockChatRepository implements IChatRepository {
     String? caption,
     String? messageId,
     String? replyTo,
+    String? replyToId,
   }) async {}
 
   @override

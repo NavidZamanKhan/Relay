@@ -863,6 +863,7 @@ class FirestoreChatRepository implements IChatRepository {
     required String recipientPublicKey,
     String? messageId,
     String? replyTo,
+    String? replyToId,
   }) async {
     final user = _auth.currentUser;
     if (user == null) {
@@ -973,6 +974,7 @@ class FirestoreChatRepository implements IChatRepository {
       nonce: nonce,
       delivery: DeliveryStage.sent,
       replyTo: replyTo,
+      replyToId: replyToId,
     );
 
     final chatRef = _chatsCollection.doc(effectiveChatId);
@@ -1154,6 +1156,7 @@ class FirestoreChatRepository implements IChatRepository {
     String? caption,
     String? messageId,
     String? replyTo,
+    String? replyToId,
   }) async {
     final user = _auth.currentUser;
     if (user == null) throw StateError('User not authenticated');
@@ -1231,6 +1234,7 @@ class FirestoreChatRepository implements IChatRepository {
       asset: null,
       delivery: DeliveryStage.sent,
       replyTo: replyTo,
+      replyToId: replyToId,
     );
 
     final chatRef = _chatsCollection.doc(effectiveChatId);
