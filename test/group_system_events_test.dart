@@ -5,8 +5,6 @@ import 'package:relay/features/chats/chat_bloc.dart';
 import 'package:relay/features/chats/chat_models.dart';
 import 'package:relay/features/chats/widgets/group_system_event_pill.dart';
 
-import 'group_chat_admin_test.dart';
-
 void main() {
   group('GroupSystemEventPill Widget Tests', () {
     testWidgets('renders correct icon and text for admin appointment', (tester) async {

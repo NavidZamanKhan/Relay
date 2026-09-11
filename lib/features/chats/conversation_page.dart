@@ -12,6 +12,7 @@ import 'views/group_details_page.dart';
 import 'relay_message_list.dart';
 import 'message_composer.dart';
 import 'signal_background.dart';
+import 'widgets/connectivity_status_pill.dart';
 
 import '../auth/models/user_profile.dart';
 import '../auth/repositories/i_user_repository.dart';
@@ -78,6 +79,7 @@ class ConversationPage extends StatelessWidget {
                   online: online,
                   recipientId: recipientId,
                 ),
+                const ConnectivityStatusPill(),
                 const Expanded(
                   child: RelayMessageList(
                     dateHeader: _DatePill(),

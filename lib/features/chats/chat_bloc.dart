@@ -6,6 +6,7 @@ import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../core/services/audio_service.dart';
+import '../../core/services/connectivity_service.dart';
 import 'chat_models.dart';
 import 'demo_data.dart';
 import 'repositories/i_chat_repository.dart';
@@ -354,6 +355,26 @@ final class ChatMessageDeleted extends ChatEvent {
   List<Object?> get props => [chatId, messageId];
 }
 
+final class ChatConnectivityChanged extends ChatEvent {
+  const ChatConnectivityChanged(this.status);
+  final NetworkStatus status;
+
+  @override
+  List<Object?> get props => [status];
+}
+
+final class ChatOutboxFlushRequested extends ChatEvent {
+  const ChatOutboxFlushRequested();
+}
+
+final class ChatRetryOutboxItem extends ChatEvent {
+  const ChatRetryOutboxItem(this.messageId);
+  final String messageId;
+
+  @override
+  List<Object?> get props => [messageId];
+}
+
 final class ChatState extends Equatable {
   const ChatState({
     required this.conversations,
@@ -373,6 +394,8 @@ final class ChatState extends Equatable {
     this.cancelProgress = 0,
     this.replyingTo,
     this.highlightedMessageId,
+    this.networkStatus = NetworkStatus.online,
+    this.outboxQueue = const [],
   });
   final List<Conversation> conversations;
   final Map<String, List<RelayMessage>> threads;
@@ -385,6 +408,8 @@ final class ChatState extends Equatable {
   final int recordingSeconds;
   final RelayMessage? replyingTo;
   final String? highlightedMessageId;
+  final NetworkStatus networkStatus;
+  final List<OutboxItem> outboxQueue;
   List<RelayMessage> get messages => threads[activeId] ?? const [];
   bool get typing => typingIds.contains(activeId);
   List<Conversation> get filteredConversations {
@@ -428,6 +453,8 @@ final class ChatState extends Equatable {
     bool clearReplyingTo = false,
     String? highlightedMessageId,
     bool clearHighlightedMessage = false,
+    NetworkStatus? networkStatus,
+    List<OutboxItem>? outboxQueue,
   }) => ChatState(
     conversations: conversations ?? this.conversations,
     threads: threads ?? this.threads,
@@ -450,6 +477,8 @@ final class ChatState extends Equatable {
     highlightedMessageId: clearHighlightedMessage
         ? null
         : (highlightedMessageId ?? this.highlightedMessageId),
+    networkStatus: networkStatus ?? this.networkStatus,
+    outboxQueue: outboxQueue ?? this.outboxQueue,
   );
   @override
   List<Object?> get props => [
@@ -470,6 +499,8 @@ final class ChatState extends Equatable {
     cancelProgress,
     replyingTo,
     highlightedMessageId,
+    networkStatus,
+    outboxQueue,
   ];
 }
 
@@ -482,9 +513,11 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
     String? currentUserId,
     bool? demoMode,
     IAudioService? audioService,
+    IConnectivityService? connectivityService,
   })  : _chatRepository = chatRepository,
         _currentUserId = currentUserId,
         _demoMode = demoMode ?? (chatRepository == null),
+        _connectivityService = connectivityService,
         _audioService = audioService ??
             (((demoMode ?? (chatRepository == null)) ||
                     Platform.environment.containsKey('FLUTTER_TEST'))
@@ -503,6 +536,12 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
             activeId: (demoMode ?? (chatRepository == null)) ? 'aisha' : '',
           ),
         ) {
+    if (_connectivityService != null) {
+      _connectivitySubscription = _connectivityService.statusStream.listen((status) {
+        if (!isClosed) add(ChatConnectivityChanged(status));
+      });
+    }
+
     _audioPositionSubscription = _audioService.positionStream.listen((pos) {
       if (state.playingMessageId != null) {
         final msg = state.messages
@@ -817,13 +856,27 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
         }
         emit(state.copyWith(composerText: '', clearReplyingTo: true));
 
+        final outboxItem = OutboxItem(
+          chatId: effectiveChatId,
+          message: outgoing,
+          recipientPublicKey: conv?.recipientPublicKey ?? '',
+          queuedAt: DateTime.now(),
+        );
+
+        if (state.networkStatus != NetworkStatus.online) {
+          emit(state.copyWith(outboxQueue: [...state.outboxQueue, outboxItem]));
+          return;
+        }
+
         try {
           await _chatRepository.sendMessage(
             chatId: effectiveChatId,
             message: outgoing,
             recipientPublicKey: conv?.recipientPublicKey ?? '',
           );
-        } catch (_) {}
+        } catch (_) {
+          emit(state.copyWith(outboxQueue: [...state.outboxQueue, outboxItem]));
+        }
         return;
       }
 
@@ -916,6 +969,18 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
         final repo = _chatRepository;
         final peerKey = conv?.recipientPublicKey ?? '';
+        final outboxItem = OutboxItem(
+          chatId: effectiveChatId,
+          message: outgoing,
+          recipientPublicKey: peerKey,
+          queuedAt: DateTime.now(),
+        );
+
+        if (state.networkStatus != NetworkStatus.online) {
+          emit(state.copyWith(outboxQueue: [...state.outboxQueue, outboxItem]));
+          return;
+        }
+
         repo.sendImageMessage(
           chatId: effectiveChatId,
           localFilePath: localPath,
@@ -931,7 +996,11 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
               add(ChatDeliveryAdvanced(id, messageId, DeliveryStage.sent));
             }
           }
-        }).catchError((_) {});
+        }).catchError((_) {
+          if (!isClosed) {
+            emit(state.copyWith(outboxQueue: [...state.outboxQueue, outboxItem]));
+          }
+        });
         return;
       }
 
@@ -1377,8 +1446,70 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
         } catch (_) {}
       }
     });
+
+    on<ChatConnectivityChanged>((e, emit) {
+      final wasOffline = state.networkStatus != NetworkStatus.online;
+      emit(state.copyWith(networkStatus: e.status));
+      if (wasOffline && e.status == NetworkStatus.online && state.outboxQueue.isNotEmpty) {
+        add(const ChatOutboxFlushRequested());
+      }
+    });
+
+    on<ChatOutboxFlushRequested>((e, emit) async {
+      if (state.outboxQueue.isEmpty || _chatRepository == null) return;
+
+      final pending = List<OutboxItem>.from(state.outboxQueue);
+      final remaining = <OutboxItem>[];
+
+      for (final item in pending) {
+        try {
+          if (item.message.kind == MessageKind.image && item.message.asset != null) {
+            await _chatRepository.sendImageMessage(
+              chatId: item.chatId,
+              localFilePath: item.message.asset!,
+              recipientPublicKey: item.recipientPublicKey,
+              caption: item.message.text,
+              messageId: item.message.id,
+              replyTo: item.message.replyTo,
+              replyToId: item.message.replyToId,
+            );
+          } else if (item.message.kind == MessageKind.voice && item.message.asset != null) {
+            await _chatRepository.sendVoiceMessage(
+              chatId: item.chatId,
+              localFilePath: item.message.asset!,
+              duration: item.message.duration,
+              waveform: item.message.waveform ?? [],
+              recipientPublicKey: item.recipientPublicKey,
+              messageId: item.message.id,
+              replyTo: item.message.replyTo,
+              replyToId: item.message.replyToId,
+            );
+          } else {
+            await _chatRepository.sendMessage(
+              chatId: item.chatId,
+              message: item.message,
+              recipientPublicKey: item.recipientPublicKey,
+            );
+          }
+          add(ChatDeliveryAdvanced(item.chatId, item.message.id, DeliveryStage.sent));
+        } catch (_) {
+          remaining.add(item.copyWith(
+            attempts: item.attempts + 1,
+            lastAttemptAt: DateTime.now(),
+          ));
+        }
+      }
+
+      emit(state.copyWith(outboxQueue: remaining));
+    });
+
+    on<ChatRetryOutboxItem>((e, emit) {
+      add(const ChatOutboxFlushRequested());
+    });
   }
 
+  final IConnectivityService? _connectivityService;
+  StreamSubscription<NetworkStatus>? _connectivitySubscription;
   final IChatRepository? _chatRepository;
   String? _currentUserId;
   String? get currentUserId => _currentUserId;
@@ -1774,6 +1905,7 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
   @override
   Future<void> close() {
+    _connectivitySubscription?.cancel();
     _audioPositionSubscription?.cancel();
     _audioStateSubscription?.cancel();
     _audioService.dispose();

@@ -14,6 +14,7 @@ import 'conversation_page.dart';
 import 'demo_data.dart';
 import 'new_relay_sheet.dart';
 import 'relay_receipt.dart';
+import 'widgets/connectivity_status_pill.dart';
 
 class ChatListPage extends StatefulWidget {
   const ChatListPage({super.key});
@@ -118,6 +119,7 @@ class _ChatListPageState extends State<ChatListPage> {
                 ),
               ),
             ),
+            const ConnectivityStatusPill(),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 22),
               child: SizedBox(
