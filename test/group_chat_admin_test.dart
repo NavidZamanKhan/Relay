@@ -201,6 +201,14 @@ class _FakeChatRepo implements IChatRepository {
   }) async {
     calls.add('leaveGroup:$groupId:$currentUserId');
   }
+
+  @override
+  Future<void> sendSystemMessage({
+    required String groupId,
+    required String text,
+  }) async {
+    calls.add('sendSystemMessage:$groupId:$text');
+  }
 }
 
 void main() {

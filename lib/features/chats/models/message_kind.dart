@@ -3,7 +3,8 @@ enum MessageKind {
   text,
   image,
   voice,
-  document;
+  document,
+  system;
 
   static MessageKind fromString(String? value) {
     return switch (value?.toLowerCase().trim()) {
@@ -11,6 +12,7 @@ enum MessageKind {
       'image' => MessageKind.image,
       'voice' => MessageKind.voice,
       'document' => MessageKind.document,
+      'system' => MessageKind.system,
       _ => MessageKind.text,
     };
   }

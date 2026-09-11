@@ -1230,6 +1230,14 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
       emit(state.copyWith(conversations: updatedConvs));
 
+      if (e.name != null && e.name!.trim().isNotEmpty) {
+        _emitSystemMessage(emit, e.groupId, 'Group name changed to "${e.name!.trim()}"');
+      } else if (e.description != null) {
+        _emitSystemMessage(emit, e.groupId, 'Group description updated');
+      } else if (e.avatarUrl != null) {
+        _emitSystemMessage(emit, e.groupId, 'Group photo updated');
+      }
+
       if (_chatRepository != null && !_demoMode) {
         try {
           await _chatRepository.updateGroupInfo(
@@ -1254,6 +1262,10 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
       emit(state.copyWith(conversations: updatedConvs));
 
+      final targetConv = state.conversations.where((c) => c.id == e.groupId).firstOrNull;
+      final targetName = targetConv?.participantNames?[e.targetUserId] ?? 'A member';
+      _emitSystemMessage(emit, e.groupId, '$targetName was appointed as an admin');
+
       if (_chatRepository != null && !_demoMode) {
         try {
           await _chatRepository.promoteToAdmin(
@@ -1273,6 +1285,10 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
       }).toList();
 
       emit(state.copyWith(conversations: updatedConvs));
+
+      final targetConv = state.conversations.where((c) => c.id == e.groupId).firstOrNull;
+      final targetName = targetConv?.participantNames?[e.targetUserId] ?? 'A member';
+      _emitSystemMessage(emit, e.groupId, '$targetName was dismissed as an admin');
 
       if (_chatRepository != null && !_demoMode) {
         try {
@@ -1303,6 +1319,9 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
       emit(state.copyWith(conversations: updatedConvs));
 
+      final names = e.newMembers.map((m) => m.displayName).join(', ');
+      _emitSystemMessage(emit, e.groupId, 'Added $names');
+
       if (_chatRepository != null && !_demoMode) {
         try {
           await _chatRepository.addGroupMembers(
@@ -1328,6 +1347,10 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
       emit(state.copyWith(conversations: updatedConvs));
 
+      final targetConv = state.conversations.where((c) => c.id == e.groupId).firstOrNull;
+      final targetName = targetConv?.participantNames?[e.targetUserId] ?? 'A member';
+      _emitSystemMessage(emit, e.groupId, '$targetName was removed from the group');
+
       if (_chatRepository != null && !_demoMode) {
         try {
           await _chatRepository.removeGroupMember(
@@ -1342,6 +1365,8 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
       final updatedConvs =
           state.conversations.where((c) => c.id != e.groupId).toList();
       emit(state.copyWith(conversations: updatedConvs));
+
+      _emitSystemMessage(emit, e.groupId, 'You left the group');
 
       if (_chatRepository != null && !_demoMode) {
         try {
@@ -1366,6 +1391,42 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
   final _playbackClock = Stopwatch();
   int _sequence = 0;
 
+  void _emitSystemMessage(Emitter<ChatState> emit, String groupId, String text) {
+    _sequence++;
+    final sysMsg = RelayMessage(
+      id: 'sys_${DateTime.now().millisecondsSinceEpoch}_$_sequence',
+      senderId: _currentUserId ?? 'system',
+      senderName: 'System',
+      recipientId: groupId,
+      sentAt: DateTime.now(),
+      kind: MessageKind.system,
+      text: text,
+      delivery: DeliveryStage.sent,
+    );
+
+    final currentThread = state.threads[groupId] ?? state.messages;
+    final updatedThread = [...currentThread, sysMsg];
+
+    emit(
+      state.copyWith(
+        threads: {
+          ...state.threads,
+          groupId: updatedThread,
+        },
+        conversations: [
+          for (final c in state.conversations)
+            c.id == groupId
+                ? c.copyWith(
+                    lastMessage: text,
+                    previewKind: MessageKind.system,
+                    lastMessageAt: sysMsg.sentAt,
+                  )
+                : c,
+        ],
+      ),
+    );
+  }
+
   void _appendLocal(Emitter<ChatState> emit, String chatId, RelayMessage message) {
     final durationSeconds = message.duration.inSeconds;
     final durationMinutes = message.duration.inMinutes;
@@ -1377,6 +1438,7 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
       MessageKind.image => 'Photo',
       MessageKind.voice => 'Voice message · $timeStr',
       MessageKind.document => message.text ?? 'Document',
+      MessageKind.system => message.text ?? 'System update',
     };
     emit(
       state.copyWith(
@@ -1434,6 +1496,7 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
       MessageKind.image => 'Photo',
       MessageKind.voice => 'Voice note',
       MessageKind.document => 'Document',
+      MessageKind.system => 'System update',
       MessageKind.text => 'Message',
     };
   }
@@ -1443,6 +1506,7 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
       MessageKind.image => 'Photo',
       MessageKind.voice => 'Voice message',
       MessageKind.document => message.text ?? 'Document',
+      MessageKind.system => message.text ?? 'System update',
     };
     emit(
       state.copyWith(

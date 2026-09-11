@@ -650,6 +650,7 @@ class _QuotedReplyBar extends StatelessWidget {
       MessageKind.image => CupertinoIcons.photo,
       MessageKind.voice => CupertinoIcons.mic,
       MessageKind.document => CupertinoIcons.doc,
+      MessageKind.system => CupertinoIcons.info_circle,
       MessageKind.text => null,
     };
 

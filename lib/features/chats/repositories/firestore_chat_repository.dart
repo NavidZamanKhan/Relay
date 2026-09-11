@@ -1512,6 +1512,52 @@ class FirestoreChatRepository implements IChatRepository {
     );
   }
 
+  Future<String> _resolveDisplayName(String uid) async {
+    if (_userDisplayNameCache.containsKey(uid)) {
+      return _userDisplayNameCache[uid]!;
+    }
+    try {
+      final doc = await _usersCollection.doc(uid).get();
+      final name = (doc.data()?['displayName'] as String?)?.trim();
+      if (name != null && name.isNotEmpty) {
+        _userDisplayNameCache[uid] = name;
+        return name;
+      }
+    } catch (_) {}
+    return 'A member';
+  }
+
+  @override
+  Future<void> sendSystemMessage({
+    required String groupId,
+    required String text,
+  }) async {
+    final user = _auth.currentUser;
+    final messageId = 'sys_${DateTime.now().millisecondsSinceEpoch}_${math.Random().nextInt(9999)}';
+    final messageRef = _chatsCollection.doc(groupId).collection('messages').doc(messageId);
+    final chatRef = _chatsCollection.doc(groupId);
+
+    final sysMessage = RelayMessage(
+      id: messageId,
+      senderId: user?.uid ?? 'system',
+      senderName: 'System',
+      recipientId: groupId,
+      sentAt: DateTime.now(),
+      kind: MessageKind.system,
+      text: text,
+      delivery: DeliveryStage.sent,
+    );
+
+    final batch = _firestore.batch();
+    batch.set(messageRef, sysMessage.toMap(useServerTimestamp: true));
+    batch.update(chatRef, {
+      'lastMessage': text,
+      'previewKind': MessageKind.system.toDbString(),
+      'lastMessageAt': FieldValue.serverTimestamp(),
+    });
+    await batch.commit();
+  }
+
   @override
   Future<void> updateGroupInfo({
     required String groupId,
@@ -1532,6 +1578,15 @@ class FirestoreChatRepository implements IChatRepository {
     }
     if (updates.isNotEmpty) {
       await _chatsCollection.doc(groupId).update(updates);
+      final currentUid = _auth.currentUser?.uid;
+      final actorName = currentUid != null ? await _resolveDisplayName(currentUid) : 'An admin';
+      if (name != null && name.trim().isNotEmpty) {
+        await sendSystemMessage(groupId: groupId, text: '$actorName changed the group name to "$name"');
+      } else if (description != null) {
+        await sendSystemMessage(groupId: groupId, text: '$actorName updated the group description');
+      } else if (avatarUrl != null) {
+        await sendSystemMessage(groupId: groupId, text: '$actorName updated the group photo');
+      }
     }
   }
 
@@ -1543,6 +1598,10 @@ class FirestoreChatRepository implements IChatRepository {
     await _chatsCollection.doc(groupId).update({
       'adminIds': FieldValue.arrayUnion([targetUserId]),
     });
+    final currentUid = _auth.currentUser?.uid;
+    final actorName = currentUid != null ? await _resolveDisplayName(currentUid) : 'An admin';
+    final targetName = await _resolveDisplayName(targetUserId);
+    await sendSystemMessage(groupId: groupId, text: '$actorName appointed $targetName as an admin');
   }
 
   @override
@@ -1553,6 +1612,10 @@ class FirestoreChatRepository implements IChatRepository {
     await _chatsCollection.doc(groupId).update({
       'adminIds': FieldValue.arrayRemove([targetUserId]),
     });
+    final currentUid = _auth.currentUser?.uid;
+    final actorName = currentUid != null ? await _resolveDisplayName(currentUid) : 'An admin';
+    final targetName = await _resolveDisplayName(targetUserId);
+    await sendSystemMessage(groupId: groupId, text: '$actorName dismissed $targetName as an admin');
   }
 
   @override
@@ -1575,6 +1638,10 @@ class FirestoreChatRepository implements IChatRepository {
     }
 
     await _chatsCollection.doc(groupId).update(updates);
+    final currentUid = _auth.currentUser?.uid;
+    final actorName = currentUid != null ? await _resolveDisplayName(currentUid) : 'An admin';
+    final names = newMembers.map((m) => m.displayName).join(', ');
+    await sendSystemMessage(groupId: groupId, text: '$actorName added $names');
   }
 
   @override
@@ -1586,6 +1653,10 @@ class FirestoreChatRepository implements IChatRepository {
       'participantIds': FieldValue.arrayRemove([targetUserId]),
       'adminIds': FieldValue.arrayRemove([targetUserId]),
     });
+    final currentUid = _auth.currentUser?.uid;
+    final actorName = currentUid != null ? await _resolveDisplayName(currentUid) : 'An admin';
+    final targetName = await _resolveDisplayName(targetUserId);
+    await sendSystemMessage(groupId: groupId, text: '$actorName removed $targetName');
   }
 
   @override
@@ -1620,5 +1691,7 @@ class FirestoreChatRepository implements IChatRepository {
       'participantIds': remainingParticipants,
       'adminIds': remainingAdmins,
     });
+    final actorName = await _resolveDisplayName(currentUserId);
+    await sendSystemMessage(groupId: groupId, text: '$actorName left the group');
   }
 }

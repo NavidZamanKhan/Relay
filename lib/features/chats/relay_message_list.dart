@@ -8,6 +8,7 @@ import '../../core/motion/relay_motion.dart';
 import 'chat_bloc.dart';
 import 'chat_models.dart';
 import 'message_bubble.dart';
+import 'widgets/group_system_event_pill.dart';
 
 /// A bottom-anchored timeline with a small visual cache, never a second data
 /// source. Messages stay chronological in BLoC and newest-first in this cache.
@@ -297,12 +298,17 @@ class _LiveMessage extends StatelessWidget {
               m.senderName ?? activeConv?.participantNames?[m.senderId];
           return (m, isHighlighted, isGroup, senderName);
         },
-        builder: (_, data) => MessageBubble(
-          message: data.$1,
-          grouped: grouped,
-          isHighlighted: data.$2,
-          showSenderAttribution: data.$3 && !data.$1.isMine,
-          senderDisplayName: data.$4,
-        ),
+        builder: (_, data) {
+          if (data.$1.kind == MessageKind.system) {
+            return GroupSystemEventPill(message: data.$1);
+          }
+          return MessageBubble(
+            message: data.$1,
+            grouped: grouped,
+            isHighlighted: data.$2,
+            showSenderAttribution: data.$3 && !data.$1.isMine,
+            senderDisplayName: data.$4,
+          );
+        },
       );
 }

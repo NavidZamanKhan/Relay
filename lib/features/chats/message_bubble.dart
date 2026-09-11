@@ -145,6 +145,10 @@ class MessageBubble extends StatelessWidget {
                               message: message,
                               foreground: foreground,
                             ),
+                            MessageKind.system => _TextMessage(
+                              message: message,
+                              foreground: foreground,
+                            ),
                           },
                         ],
                       ),
@@ -305,6 +309,8 @@ class MessageBubble extends StatelessWidget {
         textToCopy = 'Voice note (${message.duration.inSeconds}s)';
       case MessageKind.document:
         textToCopy = message.text ?? 'Document';
+      case MessageKind.system:
+        textToCopy = message.text ?? 'System update';
     }
     Clipboard.setData(ClipboardData(text: textToCopy));
     RelayToast.show(

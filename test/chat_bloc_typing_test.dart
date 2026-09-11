@@ -182,6 +182,12 @@ class MockChatRepository implements IChatRepository {
     required String groupId,
     required String currentUserId,
   }) async {}
+
+  @override
+  Future<void> sendSystemMessage({
+    required String groupId,
+    required String text,
+  }) async {}
 }
 
 void main() {

@@ -160,4 +160,10 @@ abstract interface class IChatRepository {
     required String groupId,
     required String currentUserId,
   });
+
+  /// Dispatches an in-chat system event message to [groupId].
+  Future<void> sendSystemMessage({
+    required String groupId,
+    required String text,
+  });
 }
