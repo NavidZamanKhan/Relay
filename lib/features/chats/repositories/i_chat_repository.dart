@@ -181,4 +181,10 @@ abstract interface class IChatRepository {
     required String messageId,
     required String userId,
   });
+
+  /// Clears all messages in [chatId] for [userId] and hides the conversation.
+  Future<void> clearChat({
+    required String chatId,
+    required String userId,
+  });
 }

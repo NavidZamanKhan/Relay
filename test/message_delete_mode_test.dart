@@ -65,6 +65,14 @@ class _FakeDeletionChatRepository extends Fake implements IChatRepository {
     deletedForEveryoneMessageId = messageId;
   }
 
+  @override
+  Future<void> clearChat({
+    required String chatId,
+    required String userId,
+  }) async {
+    calls.add('clearChat:$chatId:$userId');
+  }
+
   Future<void> cleanup() async {
     await _messagesController.close();
   }
@@ -236,6 +244,34 @@ void main() {
       expect(thread.first.isDeleted, isTrue);
       expect(thread.first.text, equals('This message was deleted'));
       expect(thread.first.isMine, isFalse);
+    });
+
+    test('ChatHistoryCleared clears thread, removes conversation, and invokes repository clearChat', () async {
+      bloc.add(const ChatOpened(testChatId));
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+
+      final msg1 = RelayMessage(
+        id: 'msg_clear_1',
+        senderId: currentUserId,
+        sentAt: DateTime.now(),
+        kind: MessageKind.text,
+        text: 'Message to be cleared',
+        isMine: true,
+      );
+
+      fakeRepo.emitMessages([msg1]);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(bloc.state.threads[testChatId]?.length, equals(1));
+
+      bloc.add(const ChatHistoryCleared(chatId: testChatId));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(bloc.state.threads[testChatId], isEmpty);
+      expect(fakeRepo.calls, contains('clearChat:$testChatId:$currentUserId'));
+
+      fakeRepo.emitMessages([msg1]);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(bloc.state.threads[testChatId], isEmpty);
     });
 
     testWidgets('Tapping delete on own message shows both Delete for everyone and Delete for me', (tester) async {

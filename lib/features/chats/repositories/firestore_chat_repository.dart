@@ -219,6 +219,29 @@ class FirestoreChatRepository implements IChatRepository {
           }).catchError((_) {});
         }
 
+        final deletedForUsers = (data['deletedFor'] as List<dynamic>?)
+                ?.map((e) => e.toString())
+                .toList() ??
+            const [];
+        final rawClearedAt = data['clearedAt'] is Map
+            ? data['clearedAt'][currentUserId]
+            : null;
+        DateTime? clearedTime;
+        if (rawClearedAt is Timestamp) {
+          clearedTime = rawClearedAt.toDate();
+        } else if (rawClearedAt is int) {
+          clearedTime = DateTime.fromMillisecondsSinceEpoch(rawClearedAt);
+        } else if (rawClearedAt is String) {
+          clearedTime = DateTime.tryParse(rawClearedAt);
+        }
+
+        if (deletedForUsers.contains(currentUserId)) {
+          if (conv.lastMessageAt == null ||
+              (clearedTime != null && !conv.lastMessageAt!.isAfter(clearedTime))) {
+            continue;
+          }
+        }
+
         conversations.add(conv);
       }
 
@@ -254,6 +277,22 @@ class FirestoreChatRepository implements IChatRepository {
         .asyncMap((snapshot) async {
       final messages = <RelayMessage>[];
 
+      DateTime? clearedTime;
+      try {
+        final chatDoc = await _chatsCollection.doc(effectiveChatId).get();
+        final rawClearedAt = chatDoc.data()?['clearedAt'];
+        if (rawClearedAt is Map && rawClearedAt[currentUserId] != null) {
+          final entry = rawClearedAt[currentUserId];
+          if (entry is Timestamp) {
+            clearedTime = entry.toDate();
+          } else if (entry is int) {
+            clearedTime = DateTime.fromMillisecondsSinceEpoch(entry);
+          } else if (entry is String) {
+            clearedTime = DateTime.tryParse(entry);
+          }
+        }
+      } catch (_) {}
+
       for (final doc in snapshot.docs) {
         final rawMessage = RelayMessage.fromMap(
           doc.data(),
@@ -262,6 +301,10 @@ class FirestoreChatRepository implements IChatRepository {
         );
 
         if (rawMessage.deletedFor.contains(currentUserId)) {
+          continue;
+        }
+
+        if (clearedTime != null && !rawMessage.sentAt.isAfter(clearedTime)) {
           continue;
         }
 
@@ -2009,6 +2052,56 @@ class FirestoreChatRepository implements IChatRepository {
           'lastMessage': 'This message was deleted',
           'previewKind': MessageKind.text.toDbString(),
         });
+      }
+    } catch (_) {}
+  }
+
+  @override
+  Future<void> clearChat({
+    required String chatId,
+    required String userId,
+  }) async {
+    String effectiveChatId = chatId;
+    if (!effectiveChatId.startsWith('chat_') && !effectiveChatId.startsWith('group_')) {
+      final sorted = [userId, effectiveChatId]..sort();
+      effectiveChatId = 'chat_${sorted[0]}_${sorted[1]}';
+    }
+
+    final chatDocRef = _chatsCollection.doc(effectiveChatId);
+
+    try {
+      await chatDocRef.update({
+        'clearedAt.$userId': FieldValue.serverTimestamp(),
+        'deletedFor': FieldValue.arrayUnion([userId]),
+        'unreadCount.$userId': 0,
+      });
+    } catch (_) {
+      await chatDocRef.set({
+        'clearedAt': {userId: FieldValue.serverTimestamp()},
+        'deletedFor': [userId],
+        'unreadCount': {userId: 0},
+      }, SetOptions(merge: true));
+    }
+
+    try {
+      final messagesSnap = await chatDocRef.collection('messages').get();
+      if (messagesSnap.docs.isNotEmpty) {
+        WriteBatch batch = _firestore.batch();
+        int count = 0;
+        for (final doc in messagesSnap.docs) {
+          batch.update(doc.reference, {
+            'deletedFor': FieldValue.arrayUnion([userId]),
+          });
+          count++;
+          if (count == 450) {
+            await batch.commit();
+            batch = _firestore.batch();
+            count = 0;
+          }
+        }
+        if (count > 0) {
+          await batch.commit();
+        }
       }
     } catch (_) {}
   }

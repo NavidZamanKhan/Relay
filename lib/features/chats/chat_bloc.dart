@@ -232,7 +232,11 @@ final class ChatRecordingCancelled extends ChatEvent {
 }
 
 final class ChatHistoryCleared extends ChatEvent {
-  const ChatHistoryCleared();
+  const ChatHistoryCleared({this.chatId});
+  final String? chatId;
+
+  @override
+  List<Object?> get props => [chatId];
 }
 
 final class ChatMuteToggled extends ChatEvent {
@@ -1414,20 +1418,48 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
       if (state.isRecording) await _finishRecording(emit);
     });
     on<ChatRecordingCancelled>((e, emit) async => _cancelRecording(emit));
-    on<ChatHistoryCleared>((e, emit) {
-      _replyTimers.remove(state.activeId)?.cancel();
-      _voiceTimer?.cancel();
-      _recordingTimer?.cancel();
+    on<ChatHistoryCleared>((e, emit) async {
+      final targetChatId = (e.chatId != null && e.chatId!.isNotEmpty)
+          ? e.chatId!
+          : state.activeId;
+      if (targetChatId.isEmpty) return;
+
+      _replyTimers.remove(targetChatId)?.cancel();
+      if (state.activeId == targetChatId) {
+        _voiceTimer?.cancel();
+        _recordingTimer?.cancel();
+      }
+
+      final existingThread = state.threads[targetChatId] ?? [];
+      for (final msg in existingThread) {
+        _deletedForMeMessageIds.add(msg.id);
+      }
+
+      final updatedThreads = {...state.threads, targetChatId: <RelayMessage>[]};
+      final updatedConversations = state.conversations
+          .where((c) => c.id != targetChatId && c.recipientId != targetChatId)
+          .toList();
+
       emit(
         state.copyWith(
-          threads: {...state.threads, state.activeId: []},
-          isRecording: false,
-          recordingLocked: false,
-          clearPlayingMessage: true,
-          voicePaused: true,
-          typingIds: {...state.typingIds}..remove(state.activeId),
+          threads: updatedThreads,
+          conversations: updatedConversations,
+          isRecording: state.activeId == targetChatId ? false : state.isRecording,
+          recordingLocked: state.activeId == targetChatId ? false : state.recordingLocked,
+          clearPlayingMessage: state.activeId == targetChatId ? true : false,
+          voicePaused: state.activeId == targetChatId ? true : state.voicePaused,
+          typingIds: {...state.typingIds}..remove(targetChatId),
         ),
       );
+
+      if (!_demoMode && _chatRepository != null && _currentUserId != null) {
+        try {
+          await _chatRepository.clearChat(
+            chatId: targetChatId,
+            userId: _currentUserId!,
+          );
+        } catch (_) {}
+      }
     });
     on<ChatMuteToggled>(
       (e, emit) => emit(

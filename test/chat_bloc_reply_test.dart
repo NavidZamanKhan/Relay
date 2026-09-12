@@ -211,6 +211,12 @@ class MockChatRepository implements IChatRepository {
     required String userId,
   }) async {}
 
+  @override
+  Future<void> clearChat({
+    required String chatId,
+    required String userId,
+  }) async {}
+
   void dispose() {
     conversationsController.close();
     messagesController.close();

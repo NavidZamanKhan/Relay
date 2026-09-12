@@ -219,6 +219,12 @@ class _FakeGroupChatRepository implements IChatRepository {
     required String userId,
   }) async {}
 
+  @override
+  Future<void> clearChat({
+    required String chatId,
+    required String userId,
+  }) async {}
+
   Future<void> cleanup() async {
     await _messagesController.close();
   }

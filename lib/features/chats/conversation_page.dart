@@ -420,7 +420,7 @@ class _ConversationHeader extends StatelessWidget {
                   builder: (dialog) => AlertDialog(
                     title: const Text('Clear this conversation?'),
                     content: const Text(
-                      'Messages will be removed from this device.',
+                      'All messages will be removed and this chat will be deleted.',
                     ),
                     actions: [
                       TextButton(
@@ -429,10 +429,12 @@ class _ConversationHeader extends StatelessWidget {
                       ),
                       TextButton(
                         onPressed: () {
+                          final chatId = contactId;
                           context.read<ChatBloc>().add(
-                            const ChatHistoryCleared(),
+                            ChatHistoryCleared(chatId: chatId),
                           );
                           Navigator.pop(dialog);
+                          Navigator.of(context).pop();
                         },
                         child: const Text('Clear chat'),
                       ),

@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../core/motion/relay_motion.dart';
@@ -375,6 +376,7 @@ class _ConversationTile extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: () => ConversationPage.open(context, chat),
+        onLongPress: () => _showChatOptions(context, chat),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(22, 0, 22, 0),
           child: Row(
@@ -554,6 +556,57 @@ class _ConversationTile extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  void _showChatOptions(BuildContext context, Conversation chat) {
+    HapticFeedback.mediumImpact();
+    showCupertinoModalPopup<void>(
+      context: context,
+      builder: (actionContext) => CupertinoActionSheet(
+        title: Text(chat.name),
+        actions: [
+          CupertinoActionSheetAction(
+            isDestructiveAction: true,
+            onPressed: () {
+              Navigator.of(actionContext).pop();
+              _confirmDeleteChat(context, chat);
+            },
+            child: const Text('Delete Chat'),
+          ),
+        ],
+        cancelButton: CupertinoActionSheetAction(
+          onPressed: () => Navigator.of(actionContext).pop(),
+          child: const Text('Cancel'),
+        ),
+      ),
+    );
+  }
+
+  void _confirmDeleteChat(BuildContext context, Conversation chat) {
+    showDialog<void>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: const Text('Delete this conversation?'),
+        content: const Text(
+          'All messages will be removed and this chat will be deleted.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialog),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              context.read<ChatBloc>().add(
+                ChatHistoryCleared(chatId: chat.id),
+              );
+              Navigator.pop(dialog);
+            },
+            child: const Text('Delete'),
+          ),
+        ],
       ),
     );
   }

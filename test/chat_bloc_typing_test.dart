@@ -203,6 +203,12 @@ class MockChatRepository implements IChatRepository {
     required String messageId,
     required String userId,
   }) async {}
+
+  @override
+  Future<void> clearChat({
+    required String chatId,
+    required String userId,
+  }) async {}
 }
 
 void main() {
