@@ -28,6 +28,8 @@ class CryptoService {
   static const _privateKeyKey = 'relay_x25519_private_key';
   static const _publicKeyKey = 'relay_x25519_public_key';
 
+  String? _cachedPublicKey;
+  String? _cachedPrivateKey;
   Future<String>? _keyGenInFlight;
 
   /// Retrieves the existing base64-encoded public key or securely generates a new keypair.
@@ -55,6 +57,8 @@ class CryptoService {
         existingPriv != null &&
         existingPub.isNotEmpty &&
         existingPriv.isNotEmpty) {
+      _cachedPublicKey = existingPub;
+      _cachedPrivateKey = existingPriv;
       return existingPub;
     }
 
@@ -65,6 +69,9 @@ class CryptoService {
     final pubBase64 = base64Encode(publicKey.bytes);
     final privBase64 = base64Encode(privateBytes);
 
+    _cachedPublicKey = pubBase64;
+    _cachedPrivateKey = privBase64;
+
     await _storage.write(key: _publicKeyKey, value: pubBase64);
     await _storage.write(key: _privateKeyKey, value: privBase64);
 
@@ -72,7 +79,16 @@ class CryptoService {
   }
 
   /// Returns the existing public key if already generated, otherwise null.
-  Future<String?> getPublicKey() => _storage.read(key: _publicKeyKey);
+  Future<String?> getPublicKey() async {
+    if (_cachedPublicKey != null && _cachedPublicKey!.isNotEmpty) {
+      return _cachedPublicKey;
+    }
+    final pub = await _storage.read(key: _publicKeyKey);
+    if (pub != null && pub.isNotEmpty) {
+      _cachedPublicKey = pub;
+    }
+    return pub;
+  }
 
   /// Derives an X25519 shared secret bytes with a remote peer's public key.
   ///
@@ -80,10 +96,18 @@ class CryptoService {
   Future<List<int>> deriveSharedSecret({
     required String peerPublicKeyBase64,
   }) async {
-    final privBase64 = await _storage.read(key: _privateKeyKey);
-    if (privBase64 == null) {
-      throw StateError('Cannot derive shared secret: local private key missing.');
+    var privBase64 =
+        _cachedPrivateKey ?? await _storage.read(key: _privateKeyKey);
+    if (privBase64 == null || privBase64.trim().isEmpty) {
+      await getOrCreatePublicKey();
+      privBase64 =
+          _cachedPrivateKey ?? await _storage.read(key: _privateKeyKey);
     }
+    if (privBase64 == null || privBase64.trim().isEmpty) {
+      throw StateError(
+          'Cannot derive shared secret: local private key missing.');
+    }
+    _cachedPrivateKey = privBase64;
 
     final privBytes = base64Decode(privBase64);
     final peerPubBytes = base64Decode(peerPublicKeyBase64);
@@ -203,14 +227,23 @@ class CryptoService {
 
   /// Clears stored cryptographic keys on sign-out or account wipe.
   Future<void> clearKeys() async {
+    _cachedPublicKey = null;
+    _cachedPrivateKey = null;
     await _storage.delete(key: _publicKeyKey);
     await _storage.delete(key: _privateKeyKey);
   }
 
   /// Returns whether a valid local private key is currently stored on this device.
   Future<bool> hasLocalPrivateKey() async {
+    if (_cachedPrivateKey != null && _cachedPrivateKey!.trim().isNotEmpty) {
+      return true;
+    }
     final priv = await _storage.read(key: _privateKeyKey);
-    return priv != null && priv.trim().isNotEmpty;
+    if (priv != null && priv.trim().isNotEmpty) {
+      _cachedPrivateKey = priv;
+      return true;
+    }
+    return false;
   }
 
   /// Computes a deterministic 30-digit safety number (in 6 blocks of 5 digits)
@@ -262,6 +295,9 @@ class CryptoService {
 
     final pubBase64 = base64Encode(publicKey.bytes);
     final privBase64 = base64Encode(privateBytes);
+
+    _cachedPublicKey = pubBase64;
+    _cachedPrivateKey = privBase64;
 
     await _storage.write(key: _publicKeyKey, value: pubBase64);
     await _storage.write(key: _privateKeyKey, value: privBase64);
@@ -345,6 +381,9 @@ class CryptoService {
     final keyPair = await _algorithm.newKeyPairFromSeed(privBytes);
     final pubKey = await keyPair.extractPublicKey();
     final pubBase64 = base64Encode(pubKey.bytes);
+
+    _cachedPublicKey = pubBase64;
+    _cachedPrivateKey = privBase64;
 
     await _storage.write(key: _publicKeyKey, value: pubBase64);
     await _storage.write(key: _privateKeyKey, value: privBase64);

@@ -265,13 +265,28 @@ class FirestoreChatRepository implements IChatRepository {
         if (rawMessage.kind == MessageKind.text &&
             rawMessage.encryptedPayload != null &&
             rawMessage.nonce != null) {
+          // If the message was authored by current user and text is present, preserve it directly.
+          if (rawMessage.isMine &&
+              rawMessage.text != null &&
+              rawMessage.text!.trim().isNotEmpty) {
+            messages.add(rawMessage);
+            continue;
+          }
+
           try {
-            // In 1-on-1 chats, we can look up peer key or decrypt with peer's public key
-            final peerUid = rawMessage.isMine
+            // In 1-on-1 chats, look up peer key or decrypt with peer's public key
+            String? peerUid = rawMessage.isMine
                 ? rawMessage.recipientId
                 : rawMessage.senderId;
 
-            if (peerUid != null) {
+            if ((peerUid == null || peerUid.trim().isEmpty) &&
+                effectiveChatId.startsWith('chat_')) {
+              final parts =
+                  effectiveChatId.replaceFirst('chat_', '').split('_');
+              peerUid = parts.where((p) => p != currentUserId).firstOrNull;
+            }
+
+            if (peerUid != null && peerUid.isNotEmpty) {
               String? peerPublicKey = _userPublicKeyCache[peerUid];
               if (peerPublicKey == null) {
                 final peerDoc = await _usersCollection.doc(peerUid).get();
@@ -297,18 +312,36 @@ class FirestoreChatRepository implements IChatRepository {
             try {
               final decodedBytes = base64Decode(rawMessage.encryptedPayload!);
               final decodedText = utf8.decode(decodedBytes);
-              messages.add(rawMessage.copyWith(text: decodedText));
-              continue;
+              if (decodedText.isNotEmpty) {
+                messages.add(rawMessage.copyWith(text: decodedText));
+                continue;
+              }
             } catch (_) {}
+
+            // If public key was unavailable or group decryption failed, check if stored text exists
+            if (rawMessage.text != null && rawMessage.text!.trim().isNotEmpty) {
+              messages.add(rawMessage);
+              continue;
+            }
           } catch (_) {
+            // If decryption threw an error (e.g. key mismatch or MAC failure),
+            // preserve existing document text if present
+            if (rawMessage.text != null && rawMessage.text!.trim().isNotEmpty) {
+              messages.add(rawMessage);
+              continue;
+            }
+
             // Check if encryptedPayload was fallback base64 encoded text
             try {
               final decodedBytes = base64Decode(rawMessage.encryptedPayload!);
               final decodedText = utf8.decode(decodedBytes);
-              messages.add(rawMessage.copyWith(text: decodedText));
-              continue;
+              if (decodedText.isNotEmpty) {
+                messages.add(rawMessage.copyWith(text: decodedText));
+                continue;
+              }
             } catch (_) {}
-            // Decryption failure fallback: show guarded preview
+
+            // Decryption failure fallback: show guarded preview only if no text exists
             messages.add(rawMessage.copyWith(text: '[Encrypted message]'));
             continue;
           }
