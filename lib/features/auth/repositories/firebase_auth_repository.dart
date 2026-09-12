@@ -76,7 +76,16 @@ class FirebaseAuthRepository implements IAuthRepository {
         uid: verified.uid,
         phoneNumber: verified.phoneNumber,
       );
-      return _auth.signInWithCustomToken(customToken);
+      try {
+        return await _auth.signInWithCustomToken(customToken);
+      } on FirebaseAuthException catch (e) {
+        if (e.code == 'keychain-error') {
+          debugPrint(
+            '[FirebaseAuthRepository] macOS Keychain error encountered: ${e.message}',
+          );
+        }
+        rethrow;
+      }
     }
 
     final credential = PhoneAuthProvider.credential(
