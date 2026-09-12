@@ -381,15 +381,17 @@ class _ConversationTile extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(22, 0, 22, 0),
           child: Row(
             children: [
-              if (chat.isGroup)
+              if (chat.isGroup &&
+                  (chat.avatarAsset == null ||
+                      chat.avatarAsset!.trim().isEmpty))
                 GroupAvatar(name: chat.name)
               else
                 RelayAvatar(
                   name: chat.name,
                   asset: chat.avatarAsset,
                   size: 54,
-                  online: chat.online,
-                  heroTag: 'avatar-${chat.id}',
+                  online: chat.isGroup ? false : chat.online,
+                  heroTag: chat.isGroup ? null : 'avatar-${chat.id}',
                 ),
               const SizedBox(width: 14),
               Expanded(

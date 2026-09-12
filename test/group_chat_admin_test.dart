@@ -4,11 +4,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:relay/app_bloc.dart';
 import 'package:relay/core/crypto/crypto_service.dart';
 import 'package:relay/core/services/audio_service.dart';
+import 'package:relay/core/widgets/relay_avatar.dart';
 import 'package:relay/core/widgets/relay_badge.dart';
 import 'package:relay/features/auth/auth_bloc.dart';
 import 'package:relay/features/auth/models/user_profile.dart';
 import 'package:relay/features/auth/repositories/i_user_repository.dart';
 import 'package:relay/features/chats/chat_bloc.dart';
+import 'package:relay/features/chats/chat_list_page.dart';
 import 'package:relay/features/chats/chat_models.dart';
 import 'package:relay/features/chats/conversation_page.dart';
 import 'package:relay/features/chats/message_bubble.dart';
@@ -666,6 +668,81 @@ void main() {
       expect(find.text('Secret Agents'), findsOneWidget);
       expect(find.text('2 members'), findsOneWidget);
       expect(find.text('Bob The Builder'), findsNothing);
+
+      await tester.pumpWidget(const SizedBox());
+      bloc.close();
+      await tester.pump();
+    });
+
+    testWidgets('ChatListPage renders RelayAvatar when group has avatarAsset and GroupAvatar when empty', (tester) async {
+      tester.view.physicalSize = const Size(400, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final fakeRepo = _FakeChatRepo();
+      final userRepo = MockUserRepository();
+      final cryptoService = CryptoService(storage: FakeSecureStorage());
+
+      final bloc = ChatBloc(
+        chatRepository: fakeRepo,
+        audioService: NoOpAudioService(),
+        currentUserId: 'u_alice',
+        demoMode: false,
+      );
+
+      bloc.emit(
+        bloc.state.copyWith(
+          conversations: [
+            const Conversation(
+              id: 'group_with_avatar',
+              name: 'Group With Avatar',
+              avatarAsset: 'assets/images/aisha.png',
+              lastMessage: 'Check avatar',
+              timeLabel: 'Now',
+              isGroup: true,
+              participantIds: ['u_alice', 'u_bob'],
+            ),
+            const Conversation(
+              id: 'group_no_avatar',
+              name: 'Group No Avatar',
+              avatarAsset: null,
+              lastMessage: 'Check placeholder',
+              timeLabel: 'Now',
+              isGroup: true,
+              participantIds: ['u_alice', 'u_bob'],
+            ),
+          ],
+        ),
+      );
+
+      await tester.pumpWidget(
+        MultiRepositoryProvider(
+          providers: [
+            RepositoryProvider<IChatRepository>.value(value: fakeRepo),
+            RepositoryProvider<IUserRepository>.value(value: userRepo),
+            RepositoryProvider<CryptoService>.value(value: cryptoService),
+          ],
+          child: MultiBlocProvider(
+            providers: [
+              BlocProvider<ChatBloc>.value(value: bloc),
+              BlocProvider<AuthBloc>(create: (_) => AuthBloc()),
+              BlocProvider<AppBloc>(create: (_) => AppBloc()),
+            ],
+            child: const MaterialApp(
+              home: ChatListPage(),
+            ),
+          ),
+        ),
+      );
+
+      await tester.pump();
+
+      expect(find.text('Group With Avatar'), findsOneWidget);
+      expect(find.text('Group No Avatar'), findsOneWidget);
+
+      expect(find.byType(RelayAvatar), findsAtLeastNWidgets(1));
+      expect(find.byType(GroupAvatar), findsOneWidget);
 
       await tester.pumpWidget(const SizedBox());
       bloc.close();

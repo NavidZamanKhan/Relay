@@ -372,12 +372,17 @@ class _DesktopChatTile extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           child: Row(
             children: [
-              RelayAvatar(
-                name: chat.name,
-                asset: chat.avatarAsset,
-                size: 44,
-                online: chat.online,
-              ),
+              if (chat.isGroup &&
+                  (chat.avatarAsset == null ||
+                      chat.avatarAsset!.trim().isEmpty))
+                GroupAvatar(name: chat.name, size: 44)
+              else
+                RelayAvatar(
+                  name: chat.name,
+                  asset: chat.avatarAsset,
+                  size: 44,
+                  online: chat.isGroup ? false : chat.online,
+                ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
