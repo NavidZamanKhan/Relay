@@ -189,6 +189,20 @@ class MockChatRepository implements IChatRepository {
     required String groupId,
     required String text,
   }) async {}
+
+  @override
+  Future<void> deleteMessageForMe({
+    required String chatId,
+    required String messageId,
+    required String userId,
+  }) async {}
+
+  @override
+  Future<void> deleteMessageForEveryone({
+    required String chatId,
+    required String messageId,
+    required String userId,
+  }) async {}
 }
 
 void main() {

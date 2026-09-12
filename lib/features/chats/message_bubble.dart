@@ -68,7 +68,9 @@ class MessageBubble extends StatelessWidget {
     return _SwipeToReplyWrapper(
       message: message,
       onReply: (msg) {
-        context.read<ChatBloc>().add(ChatReplyTargetSet(msg));
+        if (!message.isDeleted) {
+          context.read<ChatBloc>().add(ChatReplyTargetSet(msg));
+        }
       },
       child: Align(
         alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
@@ -77,7 +79,7 @@ class MessageBubble extends StatelessWidget {
             left: mine ? 54 : 18,
             right: mine ? 18 : 54,
             top: grouped ? 0 : 7,
-            bottom: reactionCounts.isNotEmpty ? 14 : 4,
+            bottom: (reactionCounts.isNotEmpty && !message.isDeleted) ? 14 : 4,
           ),
           child: Builder(
             builder: (bubbleContext) {
@@ -87,7 +89,9 @@ class MessageBubble extends StatelessWidget {
                 GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onLongPress: () => _showAnchoredReactions(bubbleContext, message, mine),
-                  onDoubleTap: () => _quickHeartReaction(context, message),
+                  onDoubleTap: message.isDeleted
+                      ? null
+                      : () => _quickHeartReaction(context, message),
                   child: _BubbleHighlightWrapper(
                     isHighlighted: isHighlighted,
                     borderRadius: bubbleBorderRadius,
@@ -97,7 +101,7 @@ class MessageBubble extends StatelessWidget {
                             MediaQuery.sizeOf(context).width *
                             (message.kind == MessageKind.image ? .72 : .79),
                       ),
-                      padding: message.kind == MessageKind.image
+                      padding: message.kind == MessageKind.image && !message.isDeleted
                           ? const EdgeInsets.all(4)
                           : const EdgeInsets.fromLTRB(14, 10, 12, 8),
                       decoration: BoxDecoration(
@@ -127,35 +131,41 @@ class MessageBubble extends StatelessWidget {
                                 ),
                               ),
                             ),
-                          switch (message.kind) {
-                            MessageKind.text => _TextMessage(
+                          if (message.isDeleted)
+                            _DeletedMessage(
                               message: message,
                               foreground: foreground,
-                            ),
-                            MessageKind.image => _ImageMessage(
-                              message: message,
-                              foreground: foreground,
-                              onLongPress: () => _showAnchoredReactions(bubbleContext, message, mine),
-                            ),
-                            MessageKind.voice => _VoiceMessage(
-                              message: message,
-                              foreground: foreground,
-                            ),
-                            MessageKind.document => _DocumentMessage(
-                              message: message,
-                              foreground: foreground,
-                            ),
-                            MessageKind.system => _TextMessage(
-                              message: message,
-                              foreground: foreground,
-                            ),
-                          },
+                            )
+                          else
+                            switch (message.kind) {
+                              MessageKind.text => _TextMessage(
+                                message: message,
+                                foreground: foreground,
+                              ),
+                              MessageKind.image => _ImageMessage(
+                                message: message,
+                                foreground: foreground,
+                                onLongPress: () => _showAnchoredReactions(bubbleContext, message, mine),
+                              ),
+                              MessageKind.voice => _VoiceMessage(
+                                message: message,
+                                foreground: foreground,
+                              ),
+                              MessageKind.document => _DocumentMessage(
+                                message: message,
+                                foreground: foreground,
+                              ),
+                              MessageKind.system => _TextMessage(
+                                message: message,
+                                foreground: foreground,
+                              ),
+                            },
                         ],
                       ),
                     ),
                   ),
                 ),
-                if (reactionCounts.isNotEmpty)
+                if (reactionCounts.isNotEmpty && !message.isDeleted)
                   Positioned(
                     bottom: -8,
                     right: mine ? 6 : null,
@@ -263,24 +273,24 @@ class MessageBubble extends StatelessWidget {
             mine: mine,
             message: message,
             animation: animation,
-            currentReaction: currentReaction,
-            onReactionSelected: (emoji) {
+            currentReaction: message.isDeleted ? null : currentReaction,
+            onReactionSelected: message.isDeleted ? null : (emoji) {
               Navigator.of(routeContext).pop();
               bloc.add(ChatMessageReactionToggled(chatId, message.id, emoji));
             },
-            onMoreReactionsPressed: () {
+            onMoreReactionsPressed: message.isDeleted ? null : () {
               Navigator.of(routeContext).pop();
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 _showFullEmojiPickerForReaction(bubbleContext, bloc, chatId, message);
               });
             },
-            onReplyPressed: () {
+            onReplyPressed: message.isDeleted ? null : () {
               bloc.add(ChatReplyTargetSet(message));
             },
-            onCopyPressed: () {
+            onCopyPressed: message.isDeleted ? null : () {
               _copyMessageContent(bubbleContext, message);
             },
-            onSharePressed: () {
+            onSharePressed: message.isDeleted ? null : () {
               _shareMessageContent(bubbleContext, message);
             },
             onInfoPressed: () {
@@ -439,38 +449,73 @@ class MessageBubble extends StatelessWidget {
     ChatBloc bloc,
     RelayMessage message,
   ) {
-    showCupertinoDialog<void>(
+    final activeChatId = bloc.state.activeId.isNotEmpty
+        ? bloc.state.activeId
+        : (message.recipientId ?? '');
+    final conv = bloc.state.conversations
+        .where((c) => c.id == activeChatId)
+        .firstOrNull;
+    final isGroupAdmin = conv != null &&
+        conv.isGroup &&
+        conv.adminIds.contains(bloc.currentUserId);
+    final canDeleteForEveryone =
+        (message.isMine || isGroupAdmin) && !message.isDeleted;
+
+    showCupertinoModalPopup<void>(
       context: context,
-      builder: (dialogContext) => CupertinoAlertDialog(
+      builder: (dialogContext) => CupertinoActionSheet(
         title: const Text('Delete Message?'),
-        content: const Text(
-          'This will remove the message from your current conversation view.',
+        message: Text(
+          canDeleteForEveryone
+              ? 'You can delete this message for everyone in the chat or remove it from your device.'
+              : 'This will remove the message from your device.',
         ),
         actions: [
-          CupertinoDialogAction(
-            isDefaultAction: true,
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Cancel'),
-          ),
-          CupertinoDialogAction(
+          if (canDeleteForEveryone)
+            CupertinoActionSheetAction(
+              isDestructiveAction: true,
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                bloc.add(
+                  ChatMessageDeleted(
+                    chatId: activeChatId,
+                    messageId: message.id,
+                    mode: MessageDeleteMode.forEveryone,
+                  ),
+                );
+                RelayToast.show(
+                  context,
+                  message: 'Message deleted for everyone',
+                  icon: CupertinoIcons.trash,
+                );
+              },
+              child: const Text('Delete for everyone'),
+            ),
+          CupertinoActionSheetAction(
             isDestructiveAction: true,
             onPressed: () {
               Navigator.of(dialogContext).pop();
               bloc.add(
                 ChatMessageDeleted(
-                  chatId: bloc.state.activeId,
+                  chatId: activeChatId,
                   messageId: message.id,
+                  mode: MessageDeleteMode.forMe,
                 ),
               );
               RelayToast.show(
                 context,
-                message: 'Message removed',
+                message: 'Message deleted for you',
                 icon: CupertinoIcons.trash,
               );
             },
-            child: const Text('Delete'),
+            child: const Text('Delete for me'),
           ),
         ],
+        cancelButton: CupertinoActionSheetAction(
+          isDefaultAction: true,
+          onPressed: () => Navigator.of(dialogContext).pop(),
+          child: const Text('Cancel'),
+        ),
       ),
     );
   }
@@ -484,9 +529,8 @@ class MessageBubble extends StatelessWidget {
     final dummyController = TextEditingController();
     showModalBottomSheet<void>(
       context: context,
-      showDragHandle: true,
       isScrollControlled: true,
-      useSafeArea: true,
+      backgroundColor: Colors.transparent,
       builder: (pickerContext) => SizedBox(
         height: 340,
         child: RelayEmojiPicker(
@@ -499,6 +543,56 @@ class MessageBubble extends StatelessWidget {
         ),
       ),
     ).whenComplete(dummyController.dispose);
+  }
+}
+
+class _DeletedMessage extends StatelessWidget {
+  const _DeletedMessage({required this.message, required this.foreground});
+  final RelayMessage message;
+  final Color foreground;
+
+  @override
+  Widget build(BuildContext context) {
+    final textMuted = foreground.withValues(alpha: .70);
+    final displayText = message.isMine
+        ? 'You deleted this message'
+        : (message.text?.isNotEmpty == true
+            ? message.text!
+            : 'This message was deleted');
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Icon(
+          CupertinoIcons.slash_circle,
+          size: 13.5,
+          color: textMuted,
+        ),
+        const SizedBox(width: 6),
+        Flexible(
+          child: Text(
+            displayText,
+            style: TextStyle(
+              color: textMuted,
+              fontSize: 14,
+              fontStyle: FontStyle.italic,
+              height: 1.35,
+              letterSpacing: -.02,
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Text(
+          DateFormat('HH:mm').format(message.sentAt),
+          style: TextStyle(
+            color: textMuted.withValues(alpha: .85),
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
   }
 }
 

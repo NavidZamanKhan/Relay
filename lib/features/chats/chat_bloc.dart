@@ -360,13 +360,23 @@ final class ChatHighlightCleared extends ChatEvent {
   const ChatHighlightCleared();
 }
 
+enum MessageDeleteMode {
+  forMe,
+  forEveryone,
+}
+
 final class ChatMessageDeleted extends ChatEvent {
-  const ChatMessageDeleted({required this.chatId, required this.messageId});
+  const ChatMessageDeleted({
+    required this.chatId,
+    required this.messageId,
+    this.mode = MessageDeleteMode.forMe,
+  });
   final String chatId;
   final String messageId;
+  final MessageDeleteMode mode;
 
   @override
-  List<Object?> get props => [chatId, messageId];
+  List<Object?> get props => [chatId, messageId, mode];
 }
 
 final class ChatConnectivityChanged extends ChatEvent {
@@ -708,7 +718,11 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
             !snapshotIds.contains(m.id) &&
             now.difference(m.sentAt) < const Duration(seconds: 30),
       );
-      final merged = [...e.messages, ...pendingSending]
+      final filteredMessages = e.messages
+          .where((m) => !_deletedForMeMessageIds.contains(m.id));
+      final merged = [...filteredMessages, ...pendingSending]
+          .where((m) => !_deletedForMeMessageIds.contains(m.id))
+          .toList()
         ..sort((a, b) => a.sentAt.compareTo(b.sentAt));
 
       NotificationPayload? incomingNotification;
@@ -866,18 +880,66 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
       emit(state.copyWith(clearHighlightedMessage: true));
     });
 
-    on<ChatMessageDeleted>((e, emit) {
+    on<ChatMessageDeleted>((e, emit) async {
       final currentList = state.threads[e.chatId] ??
           (state.activeId == e.chatId ? state.messages : const <RelayMessage>[]);
-      final updatedList =
-          currentList.where((m) => m.id != e.messageId).toList();
-      emit(
-        state.copyWith(
-          threads: {...state.threads, e.chatId: updatedList},
-          clearHighlightedMessage: state.highlightedMessageId == e.messageId,
-          clearReplyingTo: state.replyingTo?.id == e.messageId,
-        ),
-      );
+      final currentUserId = _currentUserId;
+
+      if (e.mode == MessageDeleteMode.forMe) {
+        _deletedForMeMessageIds.add(e.messageId);
+        final updatedList =
+            currentList.where((m) => m.id != e.messageId).toList();
+        emit(
+          state.copyWith(
+            threads: {...state.threads, e.chatId: updatedList},
+            clearHighlightedMessage: state.highlightedMessageId == e.messageId,
+            clearReplyingTo: state.replyingTo?.id == e.messageId,
+          ),
+        );
+
+        if (_chatRepository != null && !_demoMode && currentUserId != null) {
+          try {
+            await _chatRepository.deleteMessageForMe(
+              chatId: e.chatId,
+              messageId: e.messageId,
+              userId: currentUserId,
+            );
+          } catch (_) {}
+        }
+      } else {
+        final updatedList = currentList.map((m) {
+          if (m.id == e.messageId) {
+            return m.copyWith(
+              isDeleted: true,
+              text: 'You deleted this message',
+              audioUrl: null,
+              audioData: null,
+              imageUrl: null,
+              imageData: null,
+              waveform: null,
+            );
+          }
+          return m;
+        }).toList();
+
+        emit(
+          state.copyWith(
+            threads: {...state.threads, e.chatId: updatedList},
+            clearHighlightedMessage: state.highlightedMessageId == e.messageId,
+            clearReplyingTo: state.replyingTo?.id == e.messageId,
+          ),
+        );
+
+        if (_chatRepository != null && !_demoMode && currentUserId != null) {
+          try {
+            await _chatRepository.deleteMessageForEveryone(
+              chatId: e.chatId,
+              messageId: e.messageId,
+              userId: currentUserId,
+            );
+          } catch (_) {}
+        }
+      }
     });
 
     on<ChatClosed>((e, emit) async {
@@ -2009,6 +2071,7 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
     }
   }
 
+  final Set<String> _deletedForMeMessageIds = {};
   Timer? _typingDebounceTimer;
   Timer? _highlightTimer;
   bool _isCurrentUserTyping = false;

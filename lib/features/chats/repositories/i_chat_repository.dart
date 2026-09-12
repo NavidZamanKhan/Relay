@@ -167,4 +167,18 @@ abstract interface class IChatRepository {
     required String groupId,
     required String text,
   });
+
+  /// Deletes a message for the current user ("delete for me").
+  Future<void> deleteMessageForMe({
+    required String chatId,
+    required String messageId,
+    required String userId,
+  });
+
+  /// Deletes a message for all conversation participants ("delete for everyone").
+  Future<void> deleteMessageForEveryone({
+    required String chatId,
+    required String messageId,
+    required String userId,
+  });
 }

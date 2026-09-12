@@ -261,6 +261,21 @@ class FirestoreChatRepository implements IChatRepository {
           currentUserId: currentUserId,
         );
 
+        if (rawMessage.deletedFor.contains(currentUserId)) {
+          continue;
+        }
+
+        if (rawMessage.isDeleted) {
+          messages.add(
+            rawMessage.copyWith(
+              text: rawMessage.isMine
+                  ? 'You deleted this message'
+                  : (rawMessage.text ?? 'This message was deleted'),
+            ),
+          );
+          continue;
+        }
+
         // Voice payloads are decrypted as audio bytes when playback begins.
         if (rawMessage.kind == MessageKind.text &&
             rawMessage.encryptedPayload != null &&
@@ -1928,5 +1943,73 @@ class FirestoreChatRepository implements IChatRepository {
     });
     final actorName = await _resolveDisplayName(currentUserId);
     await sendSystemMessage(groupId: groupId, text: '$actorName left the group');
+  }
+
+  @override
+  Future<void> deleteMessageForMe({
+    required String chatId,
+    required String messageId,
+    required String userId,
+  }) async {
+    String effectiveChatId = chatId;
+    if (!effectiveChatId.startsWith('chat_') && !effectiveChatId.startsWith('group_')) {
+      final sorted = [userId, effectiveChatId]..sort();
+      effectiveChatId = 'chat_${sorted[0]}_${sorted[1]}';
+    }
+
+    final messageRef = _chatsCollection
+        .doc(effectiveChatId)
+        .collection('messages')
+        .doc(messageId);
+
+    try {
+      await messageRef.update({
+        'deletedFor': FieldValue.arrayUnion([userId]),
+      });
+    } catch (_) {}
+  }
+
+  @override
+  Future<void> deleteMessageForEveryone({
+    required String chatId,
+    required String messageId,
+    required String userId,
+  }) async {
+    String effectiveChatId = chatId;
+    if (!effectiveChatId.startsWith('chat_') && !effectiveChatId.startsWith('group_')) {
+      final sorted = [userId, effectiveChatId]..sort();
+      effectiveChatId = 'chat_${sorted[0]}_${sorted[1]}';
+    }
+
+    final messageRef = _chatsCollection
+        .doc(effectiveChatId)
+        .collection('messages')
+        .doc(messageId);
+
+    try {
+      await messageRef.update({
+        'isDeleted': true,
+        'deletedAt': FieldValue.serverTimestamp(),
+        'deletedBy': userId,
+        'text': 'This message was deleted',
+        'previewKind': MessageKind.text.toDbString(),
+        'encryptedPayload': null,
+        'nonce': null,
+        'audioUrl': null,
+        'audioData': null,
+        'imageUrl': null,
+        'imageData': null,
+        'waveform': null,
+      });
+
+      final chatRef = _chatsCollection.doc(effectiveChatId);
+      final chatDoc = await chatRef.get();
+      if (chatDoc.exists && chatDoc.data()?['lastMessageId'] == messageId) {
+        await chatRef.update({
+          'lastMessage': 'This message was deleted',
+          'previewKind': MessageKind.text.toDbString(),
+        });
+      }
+    } catch (_) {}
   }
 }

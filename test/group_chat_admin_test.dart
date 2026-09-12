@@ -210,6 +210,24 @@ class _FakeChatRepo implements IChatRepository {
   }) async {
     calls.add('sendSystemMessage:$groupId:$text');
   }
+
+  @override
+  Future<void> deleteMessageForMe({
+    required String chatId,
+    required String messageId,
+    required String userId,
+  }) async {
+    calls.add('deleteMessageForMe:$chatId:$messageId');
+  }
+
+  @override
+  Future<void> deleteMessageForEveryone({
+    required String chatId,
+    required String messageId,
+    required String userId,
+  }) async {
+    calls.add('deleteMessageForEveryone:$chatId:$messageId');
+  }
 }
 
 void main() {

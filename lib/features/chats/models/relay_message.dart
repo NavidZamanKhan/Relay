@@ -29,6 +29,9 @@ class RelayMessage extends Equatable {
     this.replyTo,
     this.replyToId,
     this.senderName,
+    this.isDeleted = false,
+    this.deletedBy,
+    this.deletedFor = const [],
   });
 
   final String id;
@@ -53,6 +56,9 @@ class RelayMessage extends Equatable {
   final DeliveryStage delivery;
   final String? replyTo;
   final String? replyToId;
+  final bool isDeleted;
+  final String? deletedBy;
+  final List<String> deletedFor;
 
   RelayMessage copyWith({
     String? id,
@@ -77,6 +83,9 @@ class RelayMessage extends Equatable {
     String? replyTo,
     String? replyToId,
     String? senderName,
+    bool? isDeleted,
+    String? deletedBy,
+    List<String>? deletedFor,
   }) =>
       RelayMessage(
         id: id ?? this.id,
@@ -101,6 +110,9 @@ class RelayMessage extends Equatable {
         delivery: delivery ?? this.delivery,
         replyTo: replyTo ?? this.replyTo,
         replyToId: replyToId ?? this.replyToId,
+        isDeleted: isDeleted ?? this.isDeleted,
+        deletedBy: deletedBy ?? this.deletedBy,
+        deletedFor: deletedFor ?? this.deletedFor,
       );
 
   /// Serializes message state to Firestore document schema.
@@ -131,6 +143,9 @@ class RelayMessage extends Equatable {
       if (reactions != null && reactions!.isNotEmpty) 'reactions': reactions,
       if (replyTo != null) 'replyTo': replyTo,
       if (replyToId != null) 'replyToId': replyToId,
+      if (isDeleted) 'isDeleted': true,
+      if (deletedBy != null) 'deletedBy': deletedBy,
+      if (deletedFor.isNotEmpty) 'deletedFor': deletedFor,
     };
   }
 
@@ -174,6 +189,11 @@ class RelayMessage extends Equatable {
       );
     }
 
+    final rawDeletedFor = map['deletedFor'];
+    final deletedFor = (rawDeletedFor is List)
+        ? rawDeletedFor.map((e) => e.toString()).toList()
+        : const <String>[];
+
     return RelayMessage(
       id: id,
       senderId: sender,
@@ -197,6 +217,9 @@ class RelayMessage extends Equatable {
       replyTo: map['replyTo'] as String?,
       replyToId: map['replyToId'] as String?,
       senderName: map['senderName'] as String?,
+      isDeleted: (map['isDeleted'] as bool?) ?? false,
+      deletedBy: map['deletedBy'] as String?,
+      deletedFor: deletedFor,
     );
   }
 
@@ -224,5 +247,8 @@ class RelayMessage extends Equatable {
         delivery,
         replyTo,
         replyToId,
+        isDeleted,
+        deletedBy,
+        deletedFor,
       ];
 }

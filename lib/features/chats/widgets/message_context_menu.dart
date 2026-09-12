@@ -31,11 +31,11 @@ class MessageContextOverlay extends StatelessWidget {
     required this.mine,
     required this.message,
     required this.animation,
-    required this.currentReaction,
-    required this.onReactionSelected,
-    required this.onMoreReactionsPressed,
-    required this.onReplyPressed,
-    required this.onCopyPressed,
+    this.currentReaction,
+    this.onReactionSelected,
+    this.onMoreReactionsPressed,
+    this.onReplyPressed,
+    this.onCopyPressed,
     this.onSharePressed,
     this.onInfoPressed,
     this.onDeletePressed,
@@ -47,10 +47,10 @@ class MessageContextOverlay extends StatelessWidget {
   final RelayMessage message;
   final Animation<double> animation;
   final String? currentReaction;
-  final ValueChanged<String> onReactionSelected;
-  final VoidCallback onMoreReactionsPressed;
-  final VoidCallback onReplyPressed;
-  final VoidCallback onCopyPressed;
+  final ValueChanged<String>? onReactionSelected;
+  final VoidCallback? onMoreReactionsPressed;
+  final VoidCallback? onReplyPressed;
+  final VoidCallback? onCopyPressed;
   final VoidCallback? onSharePressed;
   final VoidCallback? onInfoPressed;
   final VoidCallback? onDeletePressed;
@@ -70,10 +70,11 @@ class MessageContextOverlay extends StatelessWidget {
     final padding = MediaQuery.paddingOf(context);
     final dark = Theme.of(context).brightness == Brightness.dark;
 
-    const double reactionBarHeight = 48.0;
+    final hasReactions = onReactionSelected != null;
+    final double reactionBarHeight = hasReactions ? 48.0 : 0.0;
     const double reactionBarWidth = 296.0;
     const double actionCardWidth = 224.0;
-    const double gap = 8.0;
+    final double gap = hasReactions ? 8.0 : 4.0;
     const double screenMargin = 14.0;
 
     final actions = _buildActionItems(context);
@@ -162,26 +163,27 @@ class MessageContextOverlay extends StatelessWidget {
           ),
         ),
         // Quick reactions bar
-        Positioned(
-          left: reactionLeft,
-          top: reactionTop,
-          child: FadeTransition(
-            opacity: animation,
-            child: ScaleTransition(
-              scale: Tween<double>(begin: 0.5, end: 1.0).animate(curvedAnim),
-              alignment: scaleAlignment,
-              child: Material(
-                type: MaterialType.transparency,
-                child: _ReactionBar(
-                  dark: dark,
-                  currentReaction: currentReaction,
-                  onReactionSelected: onReactionSelected,
-                  onMoreReactionsPressed: onMoreReactionsPressed,
+        if (hasReactions)
+          Positioned(
+            left: reactionLeft,
+            top: reactionTop,
+            child: FadeTransition(
+              opacity: animation,
+              child: ScaleTransition(
+                scale: Tween<double>(begin: 0.5, end: 1.0).animate(curvedAnim),
+                alignment: scaleAlignment,
+                child: Material(
+                  type: MaterialType.transparency,
+                  child: _ReactionBar(
+                    dark: dark,
+                    currentReaction: currentReaction,
+                    onReactionSelected: onReactionSelected!,
+                    onMoreReactionsPressed: onMoreReactionsPressed ?? () {},
+                  ),
                 ),
               ),
             ),
           ),
-        ),
         // Context action menu card
         Positioned(
           left: actionLeft,
@@ -208,22 +210,24 @@ class MessageContextOverlay extends StatelessWidget {
 
   List<MessageActionItem> _buildActionItems(BuildContext context) {
     final list = <MessageActionItem>[
-      MessageActionItem(
-        title: 'Reply',
-        icon: CupertinoIcons.reply,
-        onTap: () {
-          Navigator.maybePop(context);
-          onReplyPressed();
-        },
-      ),
-      MessageActionItem(
-        title: 'Copy',
-        icon: CupertinoIcons.doc_on_doc,
-        onTap: () {
-          Navigator.maybePop(context);
-          onCopyPressed();
-        },
-      ),
+      if (onReplyPressed != null)
+        MessageActionItem(
+          title: 'Reply',
+          icon: CupertinoIcons.reply,
+          onTap: () {
+            Navigator.maybePop(context);
+            onReplyPressed!();
+          },
+        ),
+      if (onCopyPressed != null)
+        MessageActionItem(
+          title: 'Copy',
+          icon: CupertinoIcons.doc_on_doc,
+          onTap: () {
+            Navigator.maybePop(context);
+            onCopyPressed!();
+          },
+        ),
     ];
 
     if (onSharePressed != null) {
