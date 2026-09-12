@@ -134,6 +134,27 @@ class _ConversationHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final activeConv = context.select<ChatBloc, Conversation?>(
+      (bloc) => bloc.state.conversations.where((c) => c.id == contactId).firstOrNull,
+    );
+    final isGroup = contactId.startsWith('group_') || (activeConv?.isGroup ?? false);
+
+    if (isGroup) {
+      final groupName = (activeConv?.name.trim().isNotEmpty == true)
+          ? activeConv!.name.trim()
+          : contactName;
+      final groupAvatar = (activeConv?.avatarAsset?.trim().isNotEmpty == true)
+          ? activeConv!.avatarAsset!.trim()
+          : avatarAsset;
+      return _buildBar(
+        context,
+        displayName: groupName,
+        isOnline: false,
+        avatar: groupAvatar,
+        peerUid: null,
+      );
+    }
+
     IUserRepository? userRepo;
     try {
       userRepo = context.read<IUserRepository>();
@@ -253,13 +274,16 @@ class _ConversationHeader extends StatelessWidget {
               },
               child: Row(
                 children: [
-                  RelayAvatar(
-                    name: displayName,
-                    asset: avatar ?? avatarAsset,
-                    online: false,
-                    size: 40,
-                    heroTag: isGroup ? null : 'avatar-$contactId',
-                  ),
+                  if (isGroup && (avatar == null || avatar.trim().isEmpty))
+                    GroupAvatar(name: displayName, size: 40)
+                  else
+                    RelayAvatar(
+                      name: displayName,
+                      asset: avatar ?? avatarAsset,
+                      online: false,
+                      size: 40,
+                      heroTag: isGroup ? null : 'avatar-$contactId',
+                    ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(

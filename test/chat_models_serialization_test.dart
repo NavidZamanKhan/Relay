@@ -391,6 +391,30 @@ void main() {
       );
       expect(convNotTyping.isPeerTyping, isFalse);
     });
+
+    test('Conversation.fromMap preserves group name and sets recipientId to null for groups', () {
+      final docMap = {
+        'isGroup': true,
+        'name': 'Trip Planning',
+        'participantIds': ['uid_alice', 'uid_bob', 'uid_charlie'],
+        'lastMessage': 'Welcome everyone',
+        'participantNames': {
+          'uid_alice': 'Alice',
+          'uid_bob': 'Bob',
+          'uid_charlie': 'Charlie',
+        },
+      };
+
+      final conv = Conversation.fromMap(
+        docMap,
+        'group_trip_123',
+        currentUserId: 'uid_alice',
+      );
+
+      expect(conv.isGroup, isTrue);
+      expect(conv.name, equals('Trip Planning'));
+      expect(conv.recipientId, isNull);
+    });
   });
 
   group('RelayContact Model', () {

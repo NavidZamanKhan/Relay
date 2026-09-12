@@ -611,27 +611,3 @@ class _ConversationTile extends StatelessWidget {
     );
   }
 }
-
-class GroupAvatar extends StatelessWidget {
-  const GroupAvatar({super.key, required this.name, this.size = 54});
-  final String name;
-  final double size;
-  @override
-  Widget build(BuildContext context) => Container(
-    width: size,
-    height: size,
-    decoration: BoxDecoration(
-      color: name == 'The home team'
-          ? const Color(0xFFDEE9E4)
-          : const Color(0xFFE3E5EF),
-      shape: BoxShape.circle,
-    ),
-    child: Icon(
-      name == 'The home team' ? CupertinoIcons.house : CupertinoIcons.person_2,
-      size: size * .42,
-      color: name == 'The home team'
-          ? const Color(0xFF4B7064)
-          : const Color(0xFF68738D),
-    ),
-  );
-}

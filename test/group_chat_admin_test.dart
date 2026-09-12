@@ -1,14 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:relay/app_bloc.dart';
+import 'package:relay/core/crypto/crypto_service.dart';
 import 'package:relay/core/services/audio_service.dart';
 import 'package:relay/core/widgets/relay_badge.dart';
+import 'package:relay/features/auth/auth_bloc.dart';
+import 'package:relay/features/auth/models/user_profile.dart';
+import 'package:relay/features/auth/repositories/i_user_repository.dart';
 import 'package:relay/features/chats/chat_bloc.dart';
 import 'package:relay/features/chats/chat_models.dart';
+import 'package:relay/features/chats/conversation_page.dart';
 import 'package:relay/features/chats/message_bubble.dart';
 import 'package:relay/features/chats/repositories/i_chat_repository.dart';
 import 'package:relay/features/chats/views/group_details_page.dart';
 import 'package:relay/features/chats/widgets/group_member_tile.dart';
+
+import 'auth_gate_session_test.dart';
 
 class _FakeChatRepo implements IChatRepository {
   final List<String> calls = [];
@@ -587,6 +595,81 @@ void main() {
       expect(find.text('Leave group'), findsOneWidget);
 
       bloc.close();
+    });
+
+    testWidgets('ConversationPage displays group name in header and does not overwrite with peer user profile', (tester) async {
+      final fakeRepo = _FakeChatRepo();
+      final userRepo = MockUserRepository();
+      final cryptoService = CryptoService(storage: FakeSecureStorage());
+
+      userRepo.setProfile(
+        const UserProfile(
+          uid: 'u_bob',
+          phoneNumber: '+15551234567',
+          displayName: 'Bob The Builder',
+          about: 'Hey there',
+          publicKey: 'KEY_BOB',
+        ),
+      );
+
+      final bloc = ChatBloc(
+        chatRepository: fakeRepo,
+        audioService: NoOpAudioService(),
+        currentUserId: 'u_alice',
+        demoMode: false,
+      );
+
+      bloc.emit(
+        bloc.state.copyWith(
+          activeId: 'group_test_01',
+          conversations: [
+            const Conversation(
+              id: 'group_test_01',
+              name: 'Secret Agents',
+              avatarAsset: null,
+              lastMessage: 'Welcome',
+              timeLabel: 'Now',
+              isGroup: true,
+              participantIds: ['u_alice', 'u_bob'],
+              adminIds: ['u_alice'],
+              participantNames: {'u_alice': 'Alice', 'u_bob': 'Bob'},
+            ),
+          ],
+        ),
+      );
+
+      await tester.pumpWidget(
+        MultiRepositoryProvider(
+          providers: [
+            RepositoryProvider<IChatRepository>.value(value: fakeRepo),
+            RepositoryProvider<IUserRepository>.value(value: userRepo),
+            RepositoryProvider<CryptoService>.value(value: cryptoService),
+          ],
+          child: MultiBlocProvider(
+            providers: [
+              BlocProvider<ChatBloc>.value(value: bloc),
+              BlocProvider<AuthBloc>(create: (_) => AuthBloc()),
+              BlocProvider<AppBloc>(create: (_) => AppBloc()),
+            ],
+            child: const MaterialApp(
+              home: ConversationPage(
+                contactId: 'group_test_01',
+                contactName: 'Secret Agents',
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.pump();
+
+      expect(find.text('Secret Agents'), findsOneWidget);
+      expect(find.text('2 members'), findsOneWidget);
+      expect(find.text('Bob The Builder'), findsNothing);
+
+      await tester.pumpWidget(const SizedBox());
+      bloc.close();
+      await tester.pump();
     });
   });
 }

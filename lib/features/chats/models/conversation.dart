@@ -255,7 +255,7 @@ class Conversation extends Equatable {
       lastMessageAt: messageTime,
       lastMessageSenderId: lastMessageSenderId,
       participantIds: participants,
-      recipientId: otherParticipantId ?? map['recipientId'] as String?,
+      recipientId: isGroup ? null : (otherParticipantId ?? map['recipientId'] as String?),
       recipientPublicKey: resolvedPublicKey,
       participantNames: parsedNames,
       participantAvatars: parsedAvatars,
