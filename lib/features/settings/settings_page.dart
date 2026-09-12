@@ -17,7 +17,8 @@ import 'views/notification_settings_page.dart';
 import 'views/security_settings_page.dart';
 
 class SettingsPage extends StatefulWidget {
-  const SettingsPage({super.key});
+  const SettingsPage({super.key, this.showBackButton = true});
+  final bool showBackButton;
 
   @override
   State<SettingsPage> createState() => _SettingsPageState();
@@ -52,11 +53,14 @@ class _SettingsPageState extends State<SettingsPage> {
     return Scaffold(
       appBar: AppBar(
         toolbarHeight: 52,
-        leadingWidth: 48,
-        leading: IconButton(
-          onPressed: () => Navigator.pop(context),
-          icon: const Icon(CupertinoIcons.chevron_left, size: 23),
-        ),
+        leadingWidth: widget.showBackButton ? 48 : 20,
+        automaticallyImplyLeading: false,
+        leading: widget.showBackButton
+            ? IconButton(
+                onPressed: () => Navigator.pop(context),
+                icon: const Icon(CupertinoIcons.chevron_left, size: 23),
+              )
+            : null,
         titleSpacing: 2,
         title: Text(
           'Settings',

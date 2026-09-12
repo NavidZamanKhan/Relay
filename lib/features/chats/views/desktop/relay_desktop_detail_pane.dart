@@ -21,9 +21,14 @@ class RelayDesktopDetailPane extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (selectedTab == DesktopNavTab.settings) {
-      return const Scaffold(
-        body: SafeArea(
-          child: SettingsPage(),
+      return Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 720),
+          child: const Scaffold(
+            body: SafeArea(
+              child: SettingsPage(showBackButton: false),
+            ),
+          ),
         ),
       );
     }

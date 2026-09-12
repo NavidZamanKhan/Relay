@@ -67,6 +67,7 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
   void _avatarSheet(BuildContext context, {required bool hasAvatar}) {
     showModalBottomSheet<void>(
       context: context,
+      constraints: const BoxConstraints(maxWidth: 440),
       backgroundColor: Theme.of(context).colorScheme.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
@@ -261,6 +262,7 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
                         builder: (context, value, _) => TextField(
                           controller: _name,
                           maxLength: 32,
+                          textInputAction: TextInputAction.next,
                           textCapitalization: TextCapitalization.words,
                           decoration: InputDecoration(
                             icon: const Icon(
@@ -338,13 +340,11 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            state.phone.isNotEmpty
-                                ? state.phone
-                                : 'Verified phone',
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleSmall
-                                ?.copyWith(fontWeight: FontWeight.w600),
+                            state.phone.isNotEmpty ? state.phone : 'Phone verified',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                           const SizedBox(height: 2),
                           Text(
@@ -382,32 +382,33 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
                     ? 'Saving profile...'
                     : (widget.editing ? 'Save profile' : 'Complete setup'),
                 icon: state.isVerifying ? null : CupertinoIcons.check_mark,
-                onPressed: state.isVerifying
-                    ? () {}
-                    : () {
-                        if (_name.text.trim().isEmpty) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Add a display name to continue.'),
-                            ),
-                          );
-                          return;
-                        }
-                        context.read<AuthBloc>().add(
-                              AuthProfileUpdated(
-                                name: _name.text.trim(),
-                                about: _about.text.trim(),
-                                avatarFilePath: _pickedImagePath,
-                                removeAvatar: _removeAvatar,
-                              ),
-                            );
-                      },
+                onPressed: state.isVerifying ? () {} : () => _submitProfile(state),
               ),
             ],
           );
         },
       ),
     );
+  }
+
+  void _submitProfile(AuthState state) {
+    if (state.isVerifying) return;
+    if (_name.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Add a display name to continue.'),
+        ),
+      );
+      return;
+    }
+    context.read<AuthBloc>().add(
+          AuthProfileUpdated(
+            name: _name.text.trim(),
+            about: _about.text.trim(),
+            avatarFilePath: _pickedImagePath,
+            removeAvatar: _removeAvatar,
+          ),
+        );
   }
 }
 

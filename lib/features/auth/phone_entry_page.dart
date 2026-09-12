@@ -87,6 +87,8 @@ class _PhoneEntryPageState extends State<PhoneEntryPage> {
                     child: TextField(
                       controller: _controller,
                       keyboardType: TextInputType.phone,
+                      textInputAction: TextInputAction.go,
+                      onSubmitted: (_) => _submit(state),
                       inputFormatters: [
                         FilteringTextInputFormatter.allow(RegExp(r'[0-9 -]')),
                         LengthLimitingTextInputFormatter(18),
@@ -109,24 +111,7 @@ class _PhoneEntryPageState extends State<PhoneEntryPage> {
               RelayButton(
                 label: state.isVerifying ? 'Sending code…' : 'Send verification code',
                 icon: state.isVerifying ? null : CupertinoIcons.arrow_right,
-                onPressed: state.isVerifying
-                    ? () {}
-                    : () {
-                        final digits = _controller.text.replaceAll(RegExp(r'[^0-9]'), '');
-                        if (digits.length < 7 || digits.length > 15) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Check your phone number and try again.'),
-                            ),
-                          );
-                          return;
-                        }
-                        context.read<AuthBloc>().add(
-                              AuthPhoneSubmitted(
-                                '${state.countryCode}$digits',
-                              ),
-                            );
-                      },
+                onPressed: state.isVerifying ? () {} : () => _submit(state),
               ),
               const SizedBox(height: 18),
               Center(
@@ -146,11 +131,30 @@ class _PhoneEntryPageState extends State<PhoneEntryPage> {
     );
   }
 
+  void _submit(AuthState state) {
+    if (state.isVerifying) return;
+    final digits = _controller.text.replaceAll(RegExp(r'[^0-9]'), '');
+    if (digits.length < 7 || digits.length > 15) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Check your phone number and try again.'),
+        ),
+      );
+      return;
+    }
+    context.read<AuthBloc>().add(
+          AuthPhoneSubmitted(
+            '${state.countryCode}$digits',
+          ),
+        );
+  }
+
   void _countries(BuildContext context) => showModalBottomSheet<void>(
         context: context,
         showDragHandle: true,
         isScrollControlled: true,
         useSafeArea: true,
+        constraints: const BoxConstraints(maxWidth: 440, maxHeight: 520),
         builder: (context) => BlocBuilder<AuthBloc, AuthState>(
           builder: (context, state) {
             final countries = const [

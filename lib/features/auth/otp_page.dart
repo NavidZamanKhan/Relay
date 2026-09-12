@@ -93,6 +93,14 @@ class _OtpPageState extends State<OtpPage> {
                         controller: _controller,
                         focusNode: _focusNode,
                         keyboardType: TextInputType.number,
+                        textInputAction: TextInputAction.done,
+                        onSubmitted: (value) {
+                          if (value.length == 6 && !state.isVerifying) {
+                            context
+                                .read<AuthBloc>()
+                                .add(const AuthOtpVerified());
+                          }
+                        },
                         maxLength: 6,
                         inputFormatters: [
                           FilteringTextInputFormatter.digitsOnly,

@@ -251,69 +251,85 @@ class _MessageComposerState extends State<MessageComposer>
                                   ],
                                 ),
                               )
-                            : TextField(
-                                controller: _text,
-                                focusNode: _focus,
-                                minLines: 1,
-                                maxLines: 5,
-                                keyboardType: TextInputType.multiline,
-                                textInputAction: TextInputAction.newline,
-                                enableSuggestions: true,
-                                autocorrect: true,
-                                enableInteractiveSelection: true,
-                                textCapitalization:
-                                    TextCapitalization.sentences,
-                                onTap: () {
-                                  if (_emojiPickerOpen) {
-                                    setState(() => _emojiPickerOpen = false);
+                            : Focus(
+                                onKeyEvent: (node, event) {
+                                  if (event is KeyDownEvent &&
+                                      event.logicalKey ==
+                                          LogicalKeyboardKey.enter &&
+                                      !HardwareKeyboard.instance.isShiftPressed &&
+                                      !HardwareKeyboard.instance.isAltPressed &&
+                                      !HardwareKeyboard.instance.isMetaPressed) {
+                                    if (_text.text.trim().isNotEmpty) {
+                                      _sendText();
+                                    }
+                                    return KeyEventResult.handled;
                                   }
+                                  return KeyEventResult.ignored;
                                 },
-                                onChanged: (v) =>
-                                    _bloc.add(ChatComposerChanged(v)),
-                                style: const TextStyle(
-                                  fontSize: 14.5,
-                                  height: 1.4,
-                                ),
-                                decoration: InputDecoration(
-                                  hintText: 'Message',
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 12,
+                                child: TextField(
+                                  controller: _text,
+                                  focusNode: _focus,
+                                  minLines: 1,
+                                  maxLines: 5,
+                                  keyboardType: TextInputType.multiline,
+                                  textInputAction: TextInputAction.newline,
+                                  enableSuggestions: true,
+                                  autocorrect: true,
+                                  enableInteractiveSelection: true,
+                                  textCapitalization:
+                                      TextCapitalization.sentences,
+                                  onTap: () {
+                                    if (_emojiPickerOpen) {
+                                      setState(() => _emojiPickerOpen = false);
+                                    }
+                                  },
+                                  onChanged: (v) =>
+                                      _bloc.add(ChatComposerChanged(v)),
+                                  style: const TextStyle(
+                                    fontSize: 14.5,
+                                    height: 1.4,
                                   ),
-                                  suffixIcon: IconButton(
-                                    tooltip: _emojiPickerOpen
-                                        ? 'Show keyboard'
-                                        : 'Show emojis',
-                                    onPressed: _toggleEmojiPicker,
-                                    icon: Icon(
-                                      _emojiPickerOpen
-                                          ? CupertinoIcons.keyboard
-                                          : CupertinoIcons.smiley,
-                                      size: 21,
-                                      color: _emojiPickerOpen
-                                          ? RelayColors.coral
-                                          : Theme.of(context)
-                                              .colorScheme
-                                              .onSurfaceVariant,
+                                  decoration: InputDecoration(
+                                    hintText: 'Message',
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 12,
                                     ),
-                                  ),
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(24),
-                                    borderSide: BorderSide(
-                                      color: Theme.of(context).dividerColor,
+                                    suffixIcon: IconButton(
+                                      tooltip: _emojiPickerOpen
+                                          ? 'Show keyboard'
+                                          : 'Show emojis',
+                                      onPressed: _toggleEmojiPicker,
+                                      icon: Icon(
+                                        _emojiPickerOpen
+                                            ? CupertinoIcons.keyboard
+                                            : CupertinoIcons.smiley,
+                                        size: 21,
+                                        color: _emojiPickerOpen
+                                            ? RelayColors.coral
+                                            : Theme.of(context)
+                                                .colorScheme
+                                                .onSurfaceVariant,
+                                      ),
                                     ),
-                                  ),
-                                  enabledBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(24),
-                                    borderSide: BorderSide(
-                                      color: Theme.of(context).dividerColor,
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(24),
+                                      borderSide: BorderSide(
+                                        color: Theme.of(context).dividerColor,
+                                      ),
                                     ),
-                                  ),
-                                  focusedBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(24),
-                                    borderSide: const BorderSide(
-                                      color: RelayColors.coral,
-                                      width: 1.5,
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(24),
+                                      borderSide: BorderSide(
+                                        color: Theme.of(context).dividerColor,
+                                      ),
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(24),
+                                      borderSide: const BorderSide(
+                                        color: RelayColors.coral,
+                                        width: 1.5,
+                                      ),
                                     ),
                                   ),
                                 ),

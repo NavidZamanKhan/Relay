@@ -37,6 +37,7 @@ class _RelayDesktopChatListPaneState extends State<RelayDesktopChatListPane> {
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
+      constraints: const BoxConstraints(maxWidth: 480),
       backgroundColor: Colors.transparent,
       builder: (_) => const NewRelaySheet(),
     );
