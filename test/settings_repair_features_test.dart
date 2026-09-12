@@ -219,7 +219,8 @@ void main() {
       expect(find.text('APPEARANCE'), findsOneWidget);
       expect(find.text('YOUR RELAY'), findsOneWidget);
       expect(find.text('STORAGE'), findsOneWidget);
-      expect(find.text('PROTOTYPE'), findsOneWidget);
+      expect(find.text('PROTOTYPE'), findsNothing);
+      expect(find.text('Replay onboarding'), findsNothing);
 
       expect(find.text('Privacy & security'), findsOneWidget);
       expect(find.text('Notifications'), findsOneWidget);

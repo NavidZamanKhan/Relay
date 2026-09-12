@@ -140,21 +140,6 @@ class _SettingsPageState extends State<SettingsPage> {
             ],
           ),
           const SizedBox(height: 17),
-          const _SectionLabel('Prototype'),
-          _SettingsGroup(
-            children: [
-              _SettingsTile(
-                icon: CupertinoIcons.refresh,
-                title: 'Replay onboarding',
-                subtitle: 'Preview phone, OTP, and profile setup',
-                onTap: () {
-                  context.read<AuthBloc>().add(const AuthRestarted());
-                  Navigator.of(context).popUntil((route) => route.isFirst);
-                },
-              ),
-            ],
-          ),
-          const SizedBox(height: 17),
           _SettingsGroup(
             children: [
               _SettingsTile(
