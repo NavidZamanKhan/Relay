@@ -1,12 +1,23 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
+
+import 'desktop_auth_bridge.dart';
 import 'i_auth_repository.dart';
 
 /// Concrete implementation of [IAuthRepository] backed by Firebase Authentication.
 class FirebaseAuthRepository implements IAuthRepository {
-  FirebaseAuthRepository({FirebaseAuth? auth})
-      : _auth = auth ?? FirebaseAuth.instance;
+  FirebaseAuthRepository({
+    FirebaseAuth? auth,
+    DesktopAuthBridge? desktopBridge,
+  })  : _auth = auth ?? FirebaseAuth.instance,
+        _desktopBridge = desktopBridge ??
+            DesktopAuthBridge(
+              apiKey: (auth ?? FirebaseAuth.instance).app.options.apiKey,
+              projectId: (auth ?? FirebaseAuth.instance).app.options.projectId,
+            );
 
   final FirebaseAuth _auth;
+  final DesktopAuthBridge _desktopBridge;
 
   @override
   Stream<User?> get authStateChanges => _auth.authStateChanges();
@@ -23,6 +34,24 @@ class FirebaseAuthRepository implements IAuthRepository {
     required void Function(String verificationId) onCodeAutoRetrievalTimeout,
     int? resendToken,
   }) async {
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.macOS) {
+      try {
+        final verificationId =
+            await _desktopBridge.sendVerificationCode(phoneNumber);
+        onCodeSent(verificationId, null);
+      } on FirebaseAuthException catch (e) {
+        onVerificationFailed(e);
+      } catch (e) {
+        onVerificationFailed(
+          FirebaseAuthException(
+            code: 'network-request-failed',
+            message: 'Unable to send SMS code. Please check your network.',
+          ),
+        );
+      }
+      return;
+    }
+
     await _auth.verifyPhoneNumber(
       phoneNumber: phoneNumber,
       verificationCompleted: onVerificationCompleted,
@@ -38,6 +67,18 @@ class FirebaseAuthRepository implements IAuthRepository {
     required String verificationId,
     required String smsCode,
   }) async {
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.macOS) {
+      final verified = await _desktopBridge.verifySmsCode(
+        sessionInfo: verificationId,
+        smsCode: smsCode,
+      );
+      final customToken = _desktopBridge.mintCustomToken(
+        uid: verified.uid,
+        phoneNumber: verified.phoneNumber,
+      );
+      return _auth.signInWithCustomToken(customToken);
+    }
+
     final credential = PhoneAuthProvider.credential(
       verificationId: verificationId,
       smsCode: smsCode,
@@ -53,3 +94,4 @@ class FirebaseAuthRepository implements IAuthRepository {
   @override
   Future<void> signOut() => _auth.signOut();
 }
+

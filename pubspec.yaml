@@ -20,6 +20,7 @@ dependencies:
   cloud_firestore: ^6.9.0
   firebase_storage: ^13.5.0
   cryptography: ^2.9.0
+  crypto: ^3.0.6
   flutter_secure_storage: ^11.0.0
   record: ^7.1.1
   audioplayers: ^6.8.1

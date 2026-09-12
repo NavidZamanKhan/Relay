@@ -11,7 +11,6 @@ import 'package:relay/features/auth/auth_bloc.dart';
 import 'package:relay/features/auth/auth_scaffold.dart';
 import 'package:relay/features/auth/models/user_profile.dart';
 import 'package:relay/features/auth/phone_entry_page.dart';
-import 'package:relay/features/auth/repositories/i_auth_repository.dart';
 import 'package:relay/features/auth/repositories/i_user_repository.dart';
 import 'package:relay/features/chats/chat_bloc.dart';
 import 'package:relay/features/chats/message_composer.dart';
@@ -25,9 +24,6 @@ class _MockUserRepo implements IUserRepository {
 
   @override
   Future<void> saveUserProfile(UserProfile profile) async {}
-
-  @override
-  Future<void> updateOnlineStatus(String uid, bool isOnline) async {}
 
   @override
   Future<void> updatePresence({required String uid, required bool isOnline}) async {}
