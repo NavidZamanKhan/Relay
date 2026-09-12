@@ -26,13 +26,52 @@ class MediaViewerPage extends StatefulWidget {
       PageRouteBuilder<void>(
         opaque: false,
         barrierColor: Colors.transparent,
+        barrierDismissible: true,
+        transitionDuration: const Duration(milliseconds: 320),
+        reverseTransitionDuration: const Duration(milliseconds: 280),
         pageBuilder: (_, animation, secondaryAnimation) => MediaViewerPage(
           message: message,
           heroTag: heroTag,
         ),
-        transitionsBuilder: (_, animation, secondaryAnimation, child) =>
-            FadeTransition(opacity: animation, child: child),
+        transitionsBuilder: (_, animation, secondaryAnimation, child) {
+          // Pass child through cleanly without FadeTransition so the Hero image
+          // executes an uninterrupted, full-opacity flight from the chat bubble.
+          return child;
+        },
       ),
+    );
+  }
+
+  /// Reusable flight shuttle for seamless corner-radius interpolation during hero flight.
+  static Widget buildFlightShuttle(
+    Animation<double> animation,
+    HeroFlightDirection flightDirection,
+    RelayMessage message,
+  ) {
+    final curvedAnimation = CurvedAnimation(
+      parent: animation,
+      curve: Curves.fastOutSlowIn,
+    );
+    return AnimatedBuilder(
+      animation: curvedAnimation,
+      builder: (context, _) {
+        final t = curvedAnimation.value;
+        // On push: smoothly transition from bubble radius (14px) to full-screen (0px).
+        // On pop: smoothly transition back from 0px to bubble radius (14px).
+        final radius = flightDirection == HeroFlightDirection.push
+            ? 14.0 * (1.0 - t)
+            : 14.0 * t;
+        return Material(
+          type: MaterialType.transparency,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(radius),
+            child: RelayMessageImage(
+              message: message,
+              fit: BoxFit.cover,
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -41,10 +80,12 @@ class MediaViewerPage extends StatefulWidget {
 }
 
 class _MediaViewerPageState extends State<MediaViewerPage>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late final TransformationController _transformController;
   late final AnimationController _resetAnimController;
+  late final AnimationController _dragResetController;
   Animation<Matrix4>? _resetAnimation;
+  Animation<double>? _dragResetAnimation;
 
   double _dragOffsetY = 0.0;
   bool _isDragging = false;
@@ -62,12 +103,21 @@ class _MediaViewerPageState extends State<MediaViewerPage>
           _transformController.value = _resetAnimation!.value;
         }
       });
+    _dragResetController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 200),
+    )..addListener(() {
+        if (_dragResetAnimation != null) {
+          setState(() => _dragOffsetY = _dragResetAnimation!.value);
+        }
+      });
   }
 
   @override
   void dispose() {
     _transformController.dispose();
     _resetAnimController.dispose();
+    _dragResetController.dispose();
     super.dispose();
   }
 
@@ -109,12 +159,20 @@ class _MediaViewerPageState extends State<MediaViewerPage>
     if (!_isDragging) return;
 
     final velocity = details.primaryVelocity ?? 0.0;
-    if (_dragOffsetY > 110.0 || velocity > 650.0) {
+    if (_dragOffsetY.abs() > 110.0 || velocity.abs() > 650.0) {
       Navigator.of(context).pop();
     } else {
-      setState(() {
-        _isDragging = false;
-        _dragOffsetY = 0.0;
+      _dragResetAnimation = Tween<double>(
+        begin: _dragOffsetY,
+        end: 0.0,
+      ).animate(
+        CurvedAnimation(
+          parent: _dragResetController,
+          curve: Curves.easeOutCubic,
+        ),
+      );
+      _dragResetController.forward(from: 0.0).then((_) {
+        if (mounted) setState(() => _isDragging = false);
       });
     }
   }
@@ -138,56 +196,86 @@ class _MediaViewerPageState extends State<MediaViewerPage>
         widget.message.text!.trim().isNotEmpty;
 
     final dragRatio = (_dragOffsetY.abs() / 320.0).clamp(0.0, 1.0);
-    final bgOpacity = (1.0 - dragRatio * 0.75).clamp(0.0, 1.0);
+    final dragOpacity = (1.0 - dragRatio * 0.75).clamp(0.0, 1.0);
     final scaleRatio = (1.0 - dragRatio * 0.15).clamp(0.85, 1.0);
+
+    final routeAnimation = ModalRoute.of(context)?.animation;
 
     final senderName = widget.message.senderName ??
         (widget.message.isMine ? 'You' : 'Contact');
     final formattedTime =
         DateFormat('d MMM, HH:mm').format(widget.message.sentAt);
 
-    return Scaffold(
-      backgroundColor: Colors.black.withValues(alpha: bgOpacity * 0.96),
-      body: Stack(
-        children: [
-          // Main Interactive Image
-          GestureDetector(
-            onTap: () => setState(() => _showOverlays = !_showOverlays),
-            onDoubleTapDown: _onDoubleTap,
-            onVerticalDragUpdate: _onVerticalDragUpdate,
-            onVerticalDragEnd: _onVerticalDragEnd,
-            behavior: HitTestBehavior.opaque,
-            child: Center(
-              child: Transform.translate(
-                offset: Offset(0, _dragOffsetY),
-                child: Transform.scale(
-                  scale: scaleRatio,
-                  child: Hero(
-                    tag: effectiveTag,
-                    child: InteractiveViewer(
-                      transformationController: _transformController,
-                      minScale: 0.8,
-                      maxScale: 4.5,
-                      child: RelayMessageImage(
-                        message: widget.message,
-                        fit: BoxFit.contain,
+    return AnimatedBuilder(
+      animation: routeAnimation ?? const AlwaysStoppedAnimation(1.0),
+      builder: (context, _) {
+        final routeProgress = routeAnimation?.value ?? 1.0;
+        final bgOpacity =
+            (routeProgress * dragOpacity * 0.96).clamp(0.0, 0.96);
+
+        return Scaffold(
+          backgroundColor: Colors.black.withValues(alpha: bgOpacity),
+          body: Stack(
+            children: [
+              // Main Interactive Image with Smooth Arc Hero Flight
+              GestureDetector(
+                onTap: () => setState(() => _showOverlays = !_showOverlays),
+                onDoubleTapDown: _onDoubleTap,
+                onVerticalDragUpdate: _onVerticalDragUpdate,
+                onVerticalDragEnd: _onVerticalDragEnd,
+                behavior: HitTestBehavior.opaque,
+                child: Center(
+                  child: Transform.translate(
+                    offset: Offset(0, _dragOffsetY),
+                    child: Transform.scale(
+                      scale: scaleRatio,
+                      child: InteractiveViewer(
+                        transformationController: _transformController,
+                        minScale: 0.8,
+                        maxScale: 4.5,
+                        clipBehavior: Clip.none,
+                        child: Hero(
+                          tag: effectiveTag,
+                          createRectTween: (begin, end) =>
+                              MaterialRectCenterArcTween(
+                                  begin: begin, end: end),
+                          flightShuttleBuilder: (
+                            flightContext,
+                            animation,
+                            flightDirection,
+                            fromHeroContext,
+                            toHeroContext,
+                          ) =>
+                              MediaViewerPage.buildFlightShuttle(
+                            animation,
+                            flightDirection,
+                            widget.message,
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.zero,
+                            child: RelayMessageImage(
+                              message: widget.message,
+                              fit: BoxFit.contain,
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
-          ),
 
-          // Top App Bar Overlay
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: AnimatedOpacity(
-              opacity: _showOverlays && !_isDragging ? 1.0 : 0.0,
-              duration: const Duration(milliseconds: 180),
-              child: Container(
+              // Top App Bar Overlay
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: AnimatedOpacity(
+                  opacity: (_showOverlays && !_isDragging)
+                      ? routeProgress.clamp(0.0, 1.0)
+                      : 0.0,
+                  duration: const Duration(milliseconds: 180),
+                  child: Container(
                 padding: EdgeInsets.fromLTRB(
                   14,
                   MediaQuery.of(context).padding.top + 8,
@@ -265,7 +353,9 @@ class _MediaViewerPageState extends State<MediaViewerPage>
               left: 0,
               right: 0,
               child: AnimatedOpacity(
-                opacity: _showOverlays && !_isDragging ? 1.0 : 0.0,
+                opacity: (_showOverlays && !_isDragging)
+                    ? routeProgress.clamp(0.0, 1.0)
+                    : 0.0,
                 duration: const Duration(milliseconds: 180),
                 child: Container(
                   padding: EdgeInsets.fromLTRB(
@@ -311,5 +401,7 @@ class _MediaViewerPageState extends State<MediaViewerPage>
         ],
       ),
     );
+  },
+);
   }
 }

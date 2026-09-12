@@ -573,6 +573,20 @@ class _ImageMessage extends StatelessWidget {
           onLongPress: onLongPress,
           child: Hero(
             tag: 'shared-image-${message.id}',
+            createRectTween: (begin, end) =>
+                MaterialRectCenterArcTween(begin: begin, end: end),
+            flightShuttleBuilder: (
+              flightContext,
+              animation,
+              flightDirection,
+              fromHeroContext,
+              toHeroContext,
+            ) =>
+                MediaViewerPage.buildFlightShuttle(
+              animation,
+              flightDirection,
+              message,
+            ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(14),
               child: AspectRatio(
