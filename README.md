@@ -10,7 +10,7 @@ Relay features client-side end-to-end encryption (X25519 ECDH + AES-GCM-256), a 
 
 ## App Interface Showcase
 
-### 1. Messaging & Identity
+### 1. Messaging & Experience
 
 <table width="100%">
   <tr>
@@ -18,10 +18,10 @@ Relay features client-side end-to-end encryption (X25519 ECDH + AES-GCM-256), a 
       <img src="docs/screenshots/01_inbox_messaging.png" alt="Real-Time Inbox" width="100%" />
     </td>
     <td align="center" width="33%">
-      <img src="docs/screenshots/02_profile_identity.png" alt="Profile & Identity" width="100%" />
+      <img src="docs/screenshots/02_settings_appearance.png" alt="Settings & Appearance" width="100%" />
     </td>
     <td align="center" width="33%">
-      <img src="docs/screenshots/03_settings_appearance.png" alt="Settings & Appearance" width="100%" />
+      <img src="docs/screenshots/03_chat_preferences.png" alt="Chat & Media Preferences" width="100%" />
     </td>
   </tr>
   <tr>
@@ -30,12 +30,12 @@ Relay features client-side end-to-end encryption (X25519 ECDH + AES-GCM-256), a 
       Live Firestore conversation streams, unread badges, pinned chats, search filters, and fast-action compose button.
     </td>
     <td align="center">
-      <b>Profile & Identity</b><br/>
-      Cryptographic profile management, custom photo preview, display name character limits, and verified SMS phone badge.
-    </td>
-    <td align="center">
       <b>Settings & Appearance</b><br/>
       Adaptive light/dark theme switching, security navigation, local cache inspection, and account management.
+    </td>
+    <td align="center">
+      <b>Chat & Media Preferences</b><br/>
+      Per-network auto-download rules for Wi-Fi and cellular, gallery saving, enter-to-send toggle, and storage cleanup.
     </td>
   </tr>
 </table>
@@ -70,25 +70,6 @@ Relay features client-side end-to-end encryption (X25519 ECDH + AES-GCM-256), a 
   </tr>
 </table>
 
-### 3. Media Controls & Local Storage
-
-<table width="100%">
-  <tr>
-    <td align="center" width="33%">
-      <img src="docs/screenshots/07_chat_preferences.png" alt="Chat & Media Preferences" width="100%" />
-    </td>
-    <td width="33%"></td>
-    <td width="33%"></td>
-  </tr>
-  <tr>
-    <td align="center">
-      <b>Chat & Media Preferences</b><br/>
-      Per-network auto-download rules for Wi-Fi and cellular, gallery saving, enter-to-send toggle, and storage cleanup.
-    </td>
-    <td></td>
-    <td></td>
-  </tr>
-</table>
 
 ## Core Capabilities
 
