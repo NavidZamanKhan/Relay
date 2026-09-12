@@ -243,11 +243,11 @@ class MessageBubble extends StatelessWidget {
     return palette[hash % palette.length];
   }
 
-  void _showAnchoredReactions(
+  Future<void> _showAnchoredReactions(
     BuildContext bubbleContext,
     RelayMessage message,
     bool mine,
-  ) {
+  ) async {
     HapticFeedback.mediumImpact();
     final renderBox = bubbleContext.findRenderObject() as RenderBox?;
     if (renderBox == null || !renderBox.hasSize) return;
@@ -259,13 +259,13 @@ class MessageBubble extends StatelessWidget {
     final myId = bloc.currentUserId ?? 'me';
     final currentReaction = message.reactions?[myId];
 
-    Navigator.of(bubbleContext, rootNavigator: true).push(
-      PageRouteBuilder<void>(
+    final action = await Navigator.of(bubbleContext, rootNavigator: true).push<MessageContextAction>(
+      PageRouteBuilder<MessageContextAction>(
         opaque: false,
         barrierDismissible: true,
         barrierColor: Colors.black.withValues(alpha: 0.22),
         transitionDuration: const Duration(milliseconds: 220),
-        reverseTransitionDuration: const Duration(milliseconds: 160),
+        reverseTransitionDuration: const Duration(milliseconds: 140),
         pageBuilder: (routeContext, animation, secondaryAnimation) {
           return MessageContextOverlay(
             bubbleOffset: bubbleOffset,
@@ -275,14 +275,11 @@ class MessageBubble extends StatelessWidget {
             animation: animation,
             currentReaction: message.isDeleted ? null : currentReaction,
             onReactionSelected: message.isDeleted ? null : (emoji) {
-              Navigator.of(routeContext).pop();
+              Navigator.of(routeContext).pop(MessageContextAction.reaction);
               bloc.add(ChatMessageReactionToggled(chatId, message.id, emoji));
             },
             onMoreReactionsPressed: message.isDeleted ? null : () {
-              Navigator.of(routeContext).pop();
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                _showFullEmojiPickerForReaction(bubbleContext, bloc, chatId, message);
-              });
+              Navigator.of(routeContext).pop(MessageContextAction.moreReactions);
             },
             onReplyPressed: message.isDeleted ? null : () {
               bloc.add(ChatReplyTargetSet(message));
@@ -293,16 +290,32 @@ class MessageBubble extends StatelessWidget {
             onSharePressed: message.isDeleted ? null : () {
               _shareMessageContent(bubbleContext, message);
             },
-            onInfoPressed: () {
-              _showMessageInfoSheet(bubbleContext, message);
-            },
-            onDeletePressed: () {
-              _showDeleteDialog(bubbleContext, bloc, message);
-            },
+            onInfoPressed: () {},
+            onDeletePressed: () {},
           );
         },
       ),
     );
+
+    if (!bubbleContext.mounted) return;
+
+    switch (action) {
+      case MessageContextAction.delete:
+        _showDeleteDialog(bubbleContext, bloc, message);
+        break;
+      case MessageContextAction.info:
+        _showMessageInfoSheet(bubbleContext, message);
+        break;
+      case MessageContextAction.moreReactions:
+        _showFullEmojiPickerForReaction(bubbleContext, bloc, chatId, message);
+        break;
+      case MessageContextAction.reaction:
+      case MessageContextAction.reply:
+      case MessageContextAction.copy:
+      case MessageContextAction.share:
+      case null:
+        break;
+    }
   }
 
   void _copyMessageContent(BuildContext context, RelayMessage message) {

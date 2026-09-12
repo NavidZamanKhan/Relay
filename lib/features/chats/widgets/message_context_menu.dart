@@ -6,6 +6,17 @@ import 'package:flutter/services.dart';
 import 'package:relay/core/theme/relay_colors.dart';
 import 'package:relay/features/chats/chat_models.dart';
 
+/// Context action kind returned upon overlay dismissal.
+enum MessageContextAction {
+  reaction,
+  moreReactions,
+  reply,
+  copy,
+  share,
+  info,
+  delete,
+}
+
 /// Context action item descriptor.
 class MessageActionItem {
   const MessageActionItem({
@@ -215,7 +226,9 @@ class MessageContextOverlay extends StatelessWidget {
           title: 'Reply',
           icon: CupertinoIcons.reply,
           onTap: () {
-            Navigator.maybePop(context);
+            if (Navigator.of(context).canPop()) {
+              Navigator.of(context).pop(MessageContextAction.reply);
+            }
             onReplyPressed!();
           },
         ),
@@ -224,7 +237,9 @@ class MessageContextOverlay extends StatelessWidget {
           title: 'Copy',
           icon: CupertinoIcons.doc_on_doc,
           onTap: () {
-            Navigator.maybePop(context);
+            if (Navigator.of(context).canPop()) {
+              Navigator.of(context).pop(MessageContextAction.copy);
+            }
             onCopyPressed!();
           },
         ),
@@ -236,7 +251,9 @@ class MessageContextOverlay extends StatelessWidget {
           title: 'Share',
           icon: CupertinoIcons.share,
           onTap: () {
-            Navigator.maybePop(context);
+            if (Navigator.of(context).canPop()) {
+              Navigator.of(context).pop(MessageContextAction.share);
+            }
             onSharePressed!();
           },
         ),
@@ -249,8 +266,11 @@ class MessageContextOverlay extends StatelessWidget {
           title: 'Info',
           icon: CupertinoIcons.info_circle,
           onTap: () {
-            Navigator.maybePop(context);
-            onInfoPressed!();
+            if (Navigator.of(context).canPop()) {
+              Navigator.of(context).pop(MessageContextAction.info);
+            } else {
+              onInfoPressed?.call();
+            }
           },
         ),
       );
@@ -263,8 +283,11 @@ class MessageContextOverlay extends StatelessWidget {
           icon: CupertinoIcons.trash,
           isDestructive: true,
           onTap: () {
-            Navigator.maybePop(context);
-            onDeletePressed!();
+            if (Navigator.of(context).canPop()) {
+              Navigator.of(context).pop(MessageContextAction.delete);
+            } else {
+              onDeletePressed?.call();
+            }
           },
         ),
       );
@@ -352,7 +375,11 @@ class _ReactionBar extends StatelessWidget {
             ),
             onPressed: () {
               HapticFeedback.lightImpact();
-              onMoreReactionsPressed();
+              if (Navigator.of(context).canPop()) {
+                Navigator.of(context).pop(MessageContextAction.moreReactions);
+              } else {
+                onMoreReactionsPressed();
+              }
             },
           ),
         ],

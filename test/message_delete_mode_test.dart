@@ -6,6 +6,7 @@ import 'package:relay/features/chats/chat_bloc.dart';
 import 'package:relay/features/chats/chat_models.dart';
 import 'package:relay/features/chats/message_bubble.dart';
 import 'package:relay/features/chats/repositories/i_chat_repository.dart';
+import 'package:relay/features/chats/widgets/message_context_menu.dart';
 
 class _FakeDeletionChatRepository extends Fake implements IChatRepository {
   final List<String> calls = [];
@@ -267,9 +268,11 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Delete'), findsOneWidget);
+      expect(find.byType(MessageContextOverlay), findsOneWidget);
       await tester.tap(find.text('Delete'));
       await tester.pumpAndSettle();
 
+      expect(find.byType(MessageContextOverlay), findsNothing);
       expect(find.text('Delete for everyone'), findsOneWidget);
       expect(find.text('Delete for me'), findsOneWidget);
       expect(find.text('Cancel'), findsOneWidget);
@@ -308,9 +311,11 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Delete'), findsOneWidget);
+      expect(find.byType(MessageContextOverlay), findsOneWidget);
       await tester.tap(find.text('Delete'));
       await tester.pumpAndSettle();
 
+      expect(find.byType(MessageContextOverlay), findsNothing);
       expect(find.text('Delete for everyone'), findsNothing);
       expect(find.text('Delete for me'), findsOneWidget);
       expect(find.text('Cancel'), findsOneWidget);
