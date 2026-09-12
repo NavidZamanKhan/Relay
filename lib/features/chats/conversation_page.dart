@@ -4,6 +4,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../app_bloc.dart';
 import '../../core/motion/relay_motion.dart';
 import '../../core/theme/relay_colors.dart';
 import '../../core/widgets/relay_avatar.dart';
@@ -29,15 +30,27 @@ class ConversationPage extends StatelessWidget {
     this.recipientId,
   });
 
-  static void open(BuildContext context, Conversation chat) =>
-      openWith(Navigator.of(context), context.read<ChatBloc>(), chat);
+  static void open(BuildContext context, Conversation chat) {
+    final readReceipts =
+        context.read<AppBloc>().state.preferences['Read receipts'] as bool? ??
+            true;
+    openWith(
+      Navigator.of(context),
+      context.read<ChatBloc>(),
+      chat,
+      markAsRead: readReceipts,
+    );
+  }
+
 
   static void openWith(
     NavigatorState navigator,
     ChatBloc bloc,
-    Conversation chat,
-  ) {
-    bloc.add(ChatOpened(chat.id));
+    Conversation chat, {
+    bool markAsRead = true,
+  }) {
+    bloc.add(ChatOpened(chat.id, markAsRead: markAsRead));
+
     navigator.push<void>(
       RelayMotion.route(
         ConversationPage(

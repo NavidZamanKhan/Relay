@@ -35,17 +35,22 @@ class AppSettingsStorage {
       };
 
       final rawPrefs = data['preferences'] as Map<String, dynamic>?;
-      final preferences = rawPrefs?.map(
-            (k, v) => MapEntry(k, v is bool ? v : true),
-          ) ??
-          const AppState().preferences;
+      final preferences = rawPrefs != null
+          ? {...const AppState().preferences, ...rawPrefs}
+          : const AppState().preferences;
 
       final cacheMb = data['cacheMb'] as int? ?? 186;
+      final photosBytes = data['photosBytes'] as int? ?? 0;
+      final voiceBytes = data['voiceBytes'] as int? ?? 0;
+      final fileBytes = data['fileBytes'] as int? ?? 0;
 
       return AppState(
         themeMode: themeMode,
         preferences: preferences,
         cacheMb: cacheMb,
+        photosBytes: photosBytes,
+        voiceBytes: voiceBytes,
+        fileBytes: fileBytes,
       );
     } catch (_) {
       return const AppState();
@@ -66,6 +71,9 @@ class AppSettingsStorage {
         'themeMode': themeStr,
         'preferences': state.preferences,
         'cacheMb': state.cacheMb,
+        'photosBytes': state.photosBytes,
+        'voiceBytes': state.voiceBytes,
+        'fileBytes': state.fileBytes,
         'savedAt': DateTime.now().toIso8601String(),
       };
 
@@ -73,3 +81,4 @@ class AppSettingsStorage {
     } catch (_) {}
   }
 }
+

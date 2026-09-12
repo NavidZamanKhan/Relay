@@ -274,12 +274,45 @@ class _NotificationPreferencesGroup extends StatelessWidget {
 
   final AppState appState;
 
+  Future<void> _pickTime(
+    BuildContext context, {
+    required bool isStart,
+    required String currentVal,
+  }) async {
+    final parts = currentVal.split(':');
+    final initialHour = parts.isNotEmpty ? int.tryParse(parts[0]) ?? 22 : 22;
+    final initialMinute = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
+
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(hour: initialHour, minute: initialMinute),
+    );
+
+    if (picked != null && context.mounted) {
+      final formatted =
+          '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}';
+      context.read<AppBloc>().add(
+            AppPreferenceChanged(
+              isStart ? 'Quiet hours start' : 'Quiet hours end',
+              formatted,
+            ),
+          );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final quietHoursEnabled =
+        appState.preferences['Quiet hours'] as bool? ?? false;
+    final startTime =
+        appState.preferences['Quiet hours start'] as String? ?? '22:00';
+    final endTime =
+        appState.preferences['Quiet hours end'] as String? ?? '07:00';
+
     final preferences = [
       ('Message notifications', 'Receive alerts for incoming messages'),
       ('Message previews', 'Show message content snippet in alert banners'),
-      ('Quiet hours', 'Mute notification sounds and vibrations'),
+      ('Quiet hours', 'Mute notification sounds and vibrations on a schedule'),
     ];
 
     return Material(
@@ -319,6 +352,53 @@ class _NotificationPreferencesGroup extends StatelessWidget {
                       AppPreferenceChanged(preferences[i].$1, v),
                     ),
               ),
+              if (preferences[i].$1 == 'Quiet hours' && quietHoursEnabled) ...[
+                Divider(
+                  height: 1,
+                  indent: 14,
+                  endIndent: 14,
+                  color: Theme.of(context).dividerColor.withValues(alpha: 0.75),
+                ),
+                ListTile(
+                  dense: true,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 14),
+                  title: const Text(
+                    'Quiet hours window',
+                    style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
+                  ),
+                  subtitle: Text(
+                    '$startTime to $endTime',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ActionChip(
+                        label: Text(startTime, style: const TextStyle(fontSize: 11.5)),
+                        onPressed: () => _pickTime(
+                          context,
+                          isStart: true,
+                          currentVal: startTime,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      const Text('-', style: TextStyle(fontWeight: FontWeight.w700)),
+                      const SizedBox(width: 6),
+                      ActionChip(
+                        label: Text(endTime, style: const TextStyle(fontSize: 11.5)),
+                        onPressed: () => _pickTime(
+                          context,
+                          isStart: false,
+                          currentVal: endTime,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               if (i != preferences.length - 1)
                 Divider(
                   height: 1,
@@ -333,6 +413,7 @@ class _NotificationPreferencesGroup extends StatelessWidget {
     );
   }
 }
+
 
 class _TestNotificationCard extends StatelessWidget {
   const _TestNotificationCard({required this.onSendTest});

@@ -4,16 +4,45 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../app_bloc.dart';
 import '../../core/motion/relay_motion.dart';
+import '../../core/services/cache_service.dart';
 import '../../core/theme/relay_colors.dart';
 import '../../core/widgets/relay_avatar.dart';
 import '../../core/widgets/relay_button.dart';
+import '../../core/widgets/relay_toast.dart';
 import '../auth/auth_bloc.dart';
 import '../auth/profile_setup_page.dart';
+import 'views/backup_settings_page.dart';
+import 'views/chat_settings_page.dart';
 import 'views/notification_settings_page.dart';
 import 'views/security_settings_page.dart';
 
-class SettingsPage extends StatelessWidget {
+class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
+
+  @override
+  State<SettingsPage> createState() => _SettingsPageState();
+}
+
+class _SettingsPageState extends State<SettingsPage> {
+  @override
+  void initState() {
+    super.initState();
+    _refreshCache();
+  }
+
+  Future<void> _refreshCache() async {
+    final usage = await const CacheService().calculateCacheUsage();
+    if (mounted) {
+      context.read<AppBloc>().add(
+            AppCacheUpdated(
+              cacheMb: usage.totalMb,
+              photosBytes: usage.photosBytes,
+              voiceBytes: usage.voiceBytes,
+              fileBytes: usage.fileBytes,
+            ),
+          );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -75,10 +104,13 @@ class SettingsPage extends StatelessWidget {
                   RelayMotion.route(const NotificationSettingsPage()),
                 ),
               ),
-              const _SettingsTile(
+              _SettingsTile(
                 icon: CupertinoIcons.chat_bubble_2,
                 title: 'Chats',
                 subtitle: 'Media and automatic downloads',
+                onTap: () => Navigator.of(context).push(
+                  RelayMotion.route(const ChatSettingsPage()),
+                ),
               ),
             ],
           ),
@@ -86,16 +118,19 @@ class SettingsPage extends StatelessWidget {
           const _SectionLabel('Storage'),
           _SettingsGroup(
             children: [
-              const _SettingsTile(
+              _SettingsTile(
                 icon: CupertinoIcons.cloud_upload,
                 title: 'Chat backup',
                 subtitle: 'Keep a copy of your conversations',
+                onTap: () => Navigator.of(context).push(
+                  RelayMotion.route(const BackupSettingsPage()),
+                ),
               ),
               _SettingsTile(
                 icon: CupertinoIcons.archivebox,
                 title: 'Manage local cache',
                 subtitle:
-                    '${appState.cacheMb} MB · photos, voice notes, and documents',
+                    '${CacheUsage.formatBytes(appState.photosBytes + appState.voiceBytes + appState.fileBytes)} · photos, voice notes, and documents',
                 onTap: () => _cacheSheet(context),
               ),
             ],
@@ -139,7 +174,13 @@ class SettingsPage extends StatelessWidget {
     );
   }
 
+
   void _cacheSheet(BuildContext context) {
+    final appState = context.read<AppBloc>().state;
+    final totalBytes =
+        appState.photosBytes + appState.voiceBytes + appState.fileBytes;
+    final formattedTotal = CacheUsage.formatBytes(totalBytes);
+
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -161,14 +202,28 @@ class SettingsPage extends StatelessWidget {
               ).textTheme.bodyMedium?.copyWith(height: 1.45),
             ),
             const SizedBox(height: 20),
-            const _StorageBar(),
+            _StorageBar(
+              photosBytes: appState.photosBytes,
+              voiceBytes: appState.voiceBytes,
+              fileBytes: appState.fileBytes,
+            ),
             const SizedBox(height: 20),
             RelayButton(
-              label: 'Clear ${context.read<AppBloc>().state.cacheMb} MB',
-              onPressed: () {
-                context.read<AppBloc>().add(const AppCacheCleared());
-                Navigator.pop(sheetContext);
-              },
+              label: totalBytes > 0 ? 'Clear $formattedTotal' : 'Cache is empty',
+              onPressed: totalBytes > 0
+                  ? () async {
+                      await const CacheService().purgeLocalCache();
+                      if (context.mounted) {
+                        context.read<AppBloc>().add(const AppCacheCleared());
+                        Navigator.pop(sheetContext);
+                        RelayToast.show(
+                          context,
+                          message: 'Local cache cleared',
+                          icon: CupertinoIcons.checkmark_circle_fill,
+                        );
+                      }
+                    }
+                  : () => Navigator.pop(sheetContext),
             ),
           ],
         ),
@@ -199,7 +254,7 @@ class SettingsPage extends StatelessWidget {
             ),
             const SizedBox(height: 7),
             Text(
-              'Your account and message history will be removed. This action can’t be undone.',
+              'Your account, cryptographic identity, and cloud records will be permanently erased. This action cannot be undone.',
               style: Theme.of(
                 context,
               ).textTheme.bodyMedium?.copyWith(height: 1.45),
@@ -214,20 +269,23 @@ class SettingsPage extends StatelessWidget {
               width: double.infinity,
               child: TextButton(
                 onPressed: () {
-                  context.read<AuthBloc>().add(const AuthRestarted());
-                  Navigator.of(context).popUntil((r) => r.isFirst);
+                  final bloc = context.read<AuthBloc>();
+                  Navigator.pop(sheetContext);
+                  bloc.add(const AuthAccountDeleted());
                 },
                 child: const Text(
                   'Delete permanently',
                   style: TextStyle(color: RelayColors.coralDeep),
                 ),
               ),
+
             ),
           ],
         ),
       ),
     );
   }
+
 }
 
 class _ProfileRow extends StatelessWidget {
@@ -493,61 +551,79 @@ class _SettingsTile extends StatelessWidget {
 }
 
 class _StorageBar extends StatelessWidget {
-  const _StorageBar();
+  const _StorageBar({
+    this.photosBytes = 0,
+    this.voiceBytes = 0,
+    this.fileBytes = 0,
+  });
+
+  final int photosBytes;
+  final int voiceBytes;
+  final int fileBytes;
 
   @override
   Widget build(BuildContext context) {
+    final total = photosBytes + voiceBytes + fileBytes;
+    final photosFlex =
+        total > 0 ? ((photosBytes / total) * 100).round().clamp(1, 100) : 0;
+    final voiceFlex =
+        total > 0 ? ((voiceBytes / total) * 100).round().clamp(1, 100) : 0;
+    final fileFlex =
+        total > 0 ? ((fileBytes / total) * 100).round().clamp(1, 100) : 0;
+
     return Column(
       children: [
         ClipRRect(
           borderRadius: BorderRadius.circular(99),
-          child: const Row(
-            children: [
-              Expanded(
-                flex: 5,
-                child: ColoredBox(
-                  color: RelayColors.coral,
-                  child: SizedBox(height: 7),
-                ),
-              ),
-              Expanded(
-                flex: 2,
-                child: ColoredBox(
-                  color: Color(0xFF8C72FF),
-                  child: SizedBox(height: 7),
-                ),
-              ),
-              Expanded(
-                flex: 1,
-                child: ColoredBox(
-                  color: RelayColors.blue,
-                  child: SizedBox(height: 7),
-                ),
-              ),
-              Expanded(
-                flex: 4,
-                child: ColoredBox(
-                  color: RelayColors.line,
-                  child: SizedBox(height: 7),
-                ),
-              ),
-            ],
+          child: SizedBox(
+            height: 7,
+            child: total == 0
+                ? const ColoredBox(color: RelayColors.line)
+                : Row(
+                    children: [
+                      if (photosFlex > 0)
+                        Expanded(
+                          flex: photosFlex,
+                          child: const ColoredBox(color: RelayColors.coral),
+                        ),
+                      if (voiceFlex > 0)
+                        Expanded(
+                          flex: voiceFlex,
+                          child: const ColoredBox(color: Color(0xFF8C72FF)),
+                        ),
+                      if (fileFlex > 0)
+                        Expanded(
+                          flex: fileFlex,
+                          child: const ColoredBox(color: RelayColors.blue),
+                        ),
+                    ],
+                  ),
           ),
         ),
         const SizedBox(height: 11),
-        const Row(
+        Wrap(
+          spacing: 12,
+          runSpacing: 6,
           children: [
-            _Legend(color: RelayColors.coral, label: 'Photos'),
-            SizedBox(width: 15),
-            _Legend(color: Color(0xFF8C72FF), label: 'Voice'),
-            SizedBox(width: 15),
-            _Legend(color: RelayColors.blue, label: 'Files'),
+            _Legend(
+              color: RelayColors.coral,
+              label: 'Photos · ${CacheUsage.formatBytes(photosBytes)}',
+            ),
+            _Legend(
+              color: const Color(0xFF8C72FF),
+              label: 'Voice · ${CacheUsage.formatBytes(voiceBytes)}',
+            ),
+            _Legend(
+              color: RelayColors.blue,
+              label: 'Files · ${CacheUsage.formatBytes(fileBytes)}',
+            ),
           ],
         ),
       ],
     );
   }
 }
+
 
 class _Legend extends StatelessWidget {
   const _Legend({required this.color, required this.label});

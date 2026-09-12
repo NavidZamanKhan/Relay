@@ -99,6 +99,11 @@ final class AuthSignOutRequested extends AuthEvent {
   const AuthSignOutRequested();
 }
 
+final class AuthAccountDeleted extends AuthEvent {
+  const AuthAccountDeleted();
+}
+
+
 final class AuthFcmTokenUpdated extends AuthEvent {
   const AuthFcmTokenUpdated(this.token);
   final String? token;
@@ -307,7 +312,9 @@ final class AuthBloc extends Bloc<AuthEvent, AuthState> {
     on<AuthProfileUpdated>(_onProfileUpdated);
     on<AuthRestarted>(_onRestarted);
     on<AuthSignOutRequested>(_onSignOutRequested);
+    on<AuthAccountDeleted>(_onAccountDeleted);
     on<AuthFcmTokenUpdated>(_onFcmTokenUpdated);
+
     on<AuthErrorDismissed>(_onErrorDismissed);
     on<AuthKeyRegenerated>(_onKeyRegenerated);
     on<AuthKeyVaultRestored>(_onKeyVaultRestored);
@@ -843,7 +850,58 @@ final class AuthBloc extends Bloc<AuthEvent, AuthState> {
     );
   }
 
+  Future<void> _onAccountDeleted(
+    AuthAccountDeleted event,
+    Emitter<AuthState> emit,
+  ) async {
+    _resendTimer?.cancel();
+    emit(state.copyWith(isVerifying: true));
+
+    final currentUid = state.userId ?? _authRepository?.currentUser?.uid;
+    if (currentUid != null && currentUid.isNotEmpty) {
+      try {
+        await _userRepository?.updatePresence(uid: currentUid, isOnline: false);
+      } catch (_) {}
+      try {
+        await _userRepository?.updateFcmToken(uid: currentUid, token: null);
+      } catch (_) {}
+      try {
+        await _userRepository?.deleteUserProfile(currentUid);
+      } catch (_) {}
+      if (_customStorage != null) {
+        try {
+          final storagePath = 'users/$currentUid/avatar.jpg';
+          await _storage.ref(storagePath).delete().timeout(const Duration(milliseconds: 1500));
+        } catch (_) {}
+      }
+    }
+
+    try {
+      await _cryptoService?.clearKeys();
+    } catch (_) {}
+
+    try {
+      final user = _authRepository?.currentUser;
+      if (user != null) {
+        try {
+          await user.delete().timeout(const Duration(milliseconds: 1500));
+        } catch (_) {
+          await _authRepository?.signOut();
+        }
+      } else {
+        await _authRepository?.signOut();
+      }
+    } catch (_) {}
+
+    emit(
+      const AuthState(
+        step: AuthStep.phone,
+      ),
+    );
+  }
+
   Future<void> _onFcmTokenUpdated(
+
     AuthFcmTokenUpdated event,
     Emitter<AuthState> emit,
   ) async {

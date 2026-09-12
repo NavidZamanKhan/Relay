@@ -601,7 +601,11 @@ class _PrivacyPreferencesGroup extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocBuilder<AppBloc, AppState>(
       builder: (context, state) {
-        final preferences = ['Last seen', 'Read receipts', 'App lock'];
+        final preferences = [
+          ('Last seen', 'Share when you were last active with conversation contacts'),
+          ('Read receipts', 'Send and receive message read confirmations (checkmarks)'),
+          ('App lock', 'Require device biometric authentication to open Relay'),
+        ];
         return Material(
           color: Theme.of(context).colorScheme.surface,
           borderRadius: BorderRadius.circular(16),
@@ -612,35 +616,46 @@ class _PrivacyPreferencesGroup extends StatelessWidget {
             ),
             child: Column(
               children: [
-              for (var i = 0; i < preferences.length; i++) ...[
-                SwitchListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 14),
-                  title: Text(
-                    preferences[i],
-                    style: const TextStyle(
-                      fontSize: 14.5,
-                      fontWeight: FontWeight.w600,
+                for (var i = 0; i < preferences.length; i++) ...[
+                  SwitchListTile(
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 2,
                     ),
-                  ),
-                  value: state.preferences[preferences[i]] ?? true,
-                  activeThumbColor: RelayColors.coralDeep,
-                  onChanged: (v) => context.read<AppBloc>().add(
-                        AppPreferenceChanged(preferences[i], v),
+                    title: Text(
+                      preferences[i].$1,
+                      style: const TextStyle(
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w600,
                       ),
-                ),
-                if (i != preferences.length - 1)
-                  Divider(
-                    height: 1,
-                    indent: 14,
-                    endIndent: 14,
-                    color:
-                        Theme.of(context).dividerColor.withValues(alpha: 0.75),
+                    ),
+                    subtitle: Text(
+                      preferences[i].$2,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    value: state.preferences[preferences[i].$1] ??
+                        (preferences[i].$1 != 'App lock'),
+                    activeThumbColor: RelayColors.coralDeep,
+                    onChanged: (v) => context.read<AppBloc>().add(
+                          AppPreferenceChanged(preferences[i].$1, v),
+                        ),
                   ),
+                  if (i != preferences.length - 1)
+                    Divider(
+                      height: 1,
+                      indent: 14,
+                      endIndent: 14,
+                      color:
+                          Theme.of(context).dividerColor.withValues(alpha: 0.75),
+                    ),
+                ],
               ],
-            ],
+            ),
           ),
-        ),
-      );
+        );
       },
     );
   }

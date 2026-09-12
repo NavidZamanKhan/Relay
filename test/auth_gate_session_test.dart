@@ -125,7 +125,13 @@ class MockUserRepository implements IUserRepository {
       );
     }
   }
+
+  @override
+  Future<void> deleteUserProfile(String uid) async {
+    _profiles.remove(uid);
+  }
 }
+
 
 class FakeSecureStorage extends Fake implements FlutterSecureStorage {
   final Map<String, String> _data = {};

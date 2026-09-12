@@ -16,4 +16,8 @@ abstract interface class IUserRepository {
 
   /// Updates the device FCM push notification token at `users/{uid}`.
   Future<void> updateFcmToken({required String uid, required String? token});
+
+  /// Permanently deletes the user profile document at `users/{uid}`.
+  Future<void> deleteUserProfile(String uid);
 }
+

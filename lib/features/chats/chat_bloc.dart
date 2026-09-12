@@ -73,11 +73,13 @@ final class ChatDirectConversationStarted extends ChatEvent {
 }
 
 final class ChatOpened extends ChatEvent {
-  const ChatOpened(this.id);
+  const ChatOpened(this.id, {this.markAsRead = true});
   final String id;
+  final bool markAsRead;
   @override
-  List<Object?> get props => [id];
+  List<Object?> get props => [id, markAsRead];
 }
+
 
 final class ChatClosed extends ChatEvent {
   const ChatClosed(this.id);
@@ -804,10 +806,12 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
           : e.id;
 
       if (_chatRepository != null && _currentUserId != null) {
-        _chatRepository.markConversationRead(
-          chatId: effectiveChatId,
-          readerUserId: _currentUserId!,
-        );
+        if (e.markAsRead) {
+          _chatRepository.markConversationRead(
+            chatId: effectiveChatId,
+            readerUserId: _currentUserId!,
+          );
+        }
 
         _messagesSubscription = _chatRepository
             .watchMessages(effectiveChatId, _currentUserId!)
@@ -815,6 +819,7 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
           add(_ChatMessagesUpdated(effectiveChatId, msgs));
         });
       }
+
       emit(
         state.copyWith(
           activeId: effectiveChatId,

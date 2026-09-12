@@ -98,4 +98,15 @@ class FirestoreUserRepository implements IUserRepository {
       });
     } catch (_) {}
   }
+
+  @override
+  Future<void> deleteUserProfile(String uid) async {
+    final currentUser = _auth.currentUser;
+    if (currentUser == null || currentUser.uid != uid) return;
+
+    try {
+      await _usersCollection.doc(uid).delete();
+    } catch (_) {}
+  }
 }
+

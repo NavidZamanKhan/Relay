@@ -306,12 +306,13 @@ class CryptoService {
   }
 
   /// Derives a 256-bit vault key tied to the user authenticated UID.
-  Future<List<int>> _deriveVaultKey(String uid) async {
+  Future<List<int>> deriveVaultKey(String uid) async {
     final salt = utf8.encode('relay.keyvault.v1.salt:');
     final combined = [...salt, ...utf8.encode(uid)];
     final hash = await Sha256().hash(combined);
     return hash.bytes;
   }
+
 
   /// Exports the user private key as an AES-GCM encrypted vault bundle.
   Future<String> exportEncryptedKeyVault(String uid) async {
@@ -327,7 +328,7 @@ class CryptoService {
       throw StateError('Cannot export vault: private key generation failed.');
     }
 
-    final vaultKey = await _deriveVaultKey(uid);
+    final vaultKey = await deriveVaultKey(uid);
     final encrypted = await encryptPayload(
       plaintext: privBase64,
       sharedSecretBytes: vaultKey,
@@ -366,7 +367,7 @@ class CryptoService {
       throw ArgumentError('Key vault payload missing ciphertext or nonce.');
     }
 
-    final vaultKey = await _deriveVaultKey(uid);
+    final vaultKey = await deriveVaultKey(uid);
     final privBase64 = await decryptPayload(
       ciphertextBase64: ciphertext,
       nonceBase64: nonce,

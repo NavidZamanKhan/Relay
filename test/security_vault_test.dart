@@ -104,7 +104,13 @@ class MockUserRepository implements IUserRepository {
     required String uid,
     required String? token,
   }) async {}
+
+  @override
+  Future<void> deleteUserProfile(String uid) async {
+    profiles.remove(uid);
+  }
 }
+
 
 void main() {
   group('E2EE Safety Number and Vault Security Tests', () {
