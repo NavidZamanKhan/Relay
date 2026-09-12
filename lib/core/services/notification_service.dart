@@ -221,7 +221,7 @@ class RelayNotificationService implements INotificationService {
 
       messaging
           .setForegroundNotificationPresentationOptions(
-            alert: true,
+            alert: false,
             badge: true,
             sound: true,
           )
@@ -329,6 +329,12 @@ class RelayNotificationService implements INotificationService {
   Future<String?> getFcmToken() async {
     try {
       final messaging = _messaging ?? FirebaseMessaging.instance;
+      if (!kIsWeb && (Platform.isIOS || Platform.isMacOS)) {
+        final apnsToken = await messaging.getAPNSToken();
+        if (apnsToken == null) {
+          return null;
+        }
+      }
       return await messaging.getToken();
     } catch (e) {
       if (e is! MissingPluginException) {
@@ -358,7 +364,7 @@ class RelayNotificationService implements INotificationService {
       );
 
       const darwinDetails = DarwinNotificationDetails(
-        presentAlert: true,
+        presentAlert: false,
         presentBadge: true,
         presentSound: true,
       );
