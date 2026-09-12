@@ -14,6 +14,7 @@ import 'conversation_page.dart';
 import 'demo_data.dart';
 import 'new_relay_sheet.dart';
 import 'relay_receipt.dart';
+import 'views/desktop/relay_desktop_scaffold.dart';
 import 'widgets/connectivity_status_pill.dart';
 
 class ChatListPage extends StatefulWidget {
@@ -81,6 +82,17 @@ class _ChatListPageState extends State<ChatListPage> {
 
   @override
   Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth >= 768) {
+          return const RelayDesktopScaffold();
+        }
+        return _buildMobileView(context);
+      },
+    );
+  }
+
+  Widget _buildMobileView(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
       body: SafeArea(
@@ -172,30 +184,43 @@ class _ChatListPageState extends State<ChatListPage> {
                   a.filter != b.filter || a.conversations != b.conversations,
               builder: (context, state) => Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 22),
-                child: Row(
-                  children: [
-                    _Filter(
-                      label: 'All',
-                      count: state.conversations.length,
-                      value: InboxFilter.all,
-                      selected: state.filter,
-                    ),
-                    const SizedBox(width: 8),
-                    _Filter(
-                      label: 'Unread',
-                      count: state.conversations
-                          .where((c) => c.unread > 0)
-                          .length,
-                      value: InboxFilter.unread,
-                      selected: state.filter,
-                    ),
-                    const SizedBox(width: 8),
-                    _Filter(
-                      label: 'Groups',
-                      value: InboxFilter.groups,
-                      selected: state.filter,
-                    ),
-                  ],
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  physics: const BouncingScrollPhysics(),
+                  child: Row(
+                    children: [
+                      _Filter(
+                        label: 'All',
+                        count: state.conversations.length,
+                        value: InboxFilter.all,
+                        selected: state.filter,
+                      ),
+                      const SizedBox(width: 8),
+                      _Filter(
+                        label: 'Unread',
+                        count: state.conversations
+                            .where((c) => c.unread > 0)
+                            .length,
+                        value: InboxFilter.unread,
+                        selected: state.filter,
+                      ),
+                      const SizedBox(width: 8),
+                      _Filter(
+                        label: 'Favorites',
+                        count: state.conversations
+                            .where((c) => c.pinned)
+                            .length,
+                        value: InboxFilter.favorites,
+                        selected: state.filter,
+                      ),
+                      const SizedBox(width: 8),
+                      _Filter(
+                        label: 'Groups',
+                        value: InboxFilter.groups,
+                        selected: state.filter,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),

@@ -2,5 +2,6 @@
 enum InboxFilter {
   all,
   unread,
+  favorites,
   groups,
 }

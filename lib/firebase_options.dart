@@ -28,10 +28,7 @@ class DefaultFirebaseOptions {
       case TargetPlatform.iOS:
         return ios;
       case TargetPlatform.macOS:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for macos - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
+        return macos;
       case TargetPlatform.windows:
         throw UnsupportedError(
           'DefaultFirebaseOptions have not been configured for windows - '
@@ -58,6 +55,15 @@ class DefaultFirebaseOptions {
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
+    apiKey: 'AIzaSyC-Mft7PqhvgDy1NsgOM5AwCKdSPgkeOgE',
+    appId: '1:648116014297:ios:de787428e0d6a59492c2c8',
+    messagingSenderId: '648116014297',
+    projectId: 'relay-86c7b',
+    storageBucket: 'relay-86c7b.firebasestorage.app',
+    iosBundleId: 'com.navidzamankhan.relay',
+  );
+
+  static const FirebaseOptions macos = FirebaseOptions(
     apiKey: 'AIzaSyC-Mft7PqhvgDy1NsgOM5AwCKdSPgkeOgE',
     appId: '1:648116014297:ios:de787428e0d6a59492c2c8',
     messagingSenderId: '648116014297',

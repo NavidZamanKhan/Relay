@@ -28,5 +28,9 @@
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Relay requires access to your microphone to record and send voice messages.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Relay requires access to your photos to attach and share images in conversations.</string>
 </dict>
 </plist>

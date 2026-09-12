@@ -435,6 +435,7 @@ final class ChatState extends Equatable {
           final matchesFilter = switch (filter) {
             InboxFilter.all => true,
             InboxFilter.unread => c.unread > 0,
+            InboxFilter.favorites => c.pinned,
             InboxFilter.groups => c.isGroup,
           };
           return matchesFilter &&

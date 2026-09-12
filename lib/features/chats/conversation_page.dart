@@ -28,6 +28,7 @@ class ConversationPage extends StatelessWidget {
     this.avatarAsset,
     this.online = true,
     this.recipientId,
+    this.showBackButton = true,
   });
 
   static void open(BuildContext context, Conversation chat) {
@@ -71,10 +72,12 @@ class ConversationPage extends StatelessWidget {
   final String? avatarAsset;
   final bool online;
   final String? recipientId;
+  final bool showBackButton;
 
   @override
   Widget build(BuildContext context) {
     return PopScope(
+      canPop: showBackButton,
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) {
           context.read<ChatBloc>().add(ChatClosed(contactId));
@@ -93,6 +96,7 @@ class ConversationPage extends StatelessWidget {
                   avatarAsset: avatarAsset,
                   online: online,
                   recipientId: recipientId,
+                  showBackButton: showBackButton,
                 ),
                 const ConnectivityStatusPill(),
                 const Expanded(
@@ -118,6 +122,7 @@ class _ConversationHeader extends StatelessWidget {
     required this.avatarAsset,
     required this.online,
     this.recipientId,
+    this.showBackButton = true,
   });
 
   final String contactId;
@@ -125,6 +130,7 @@ class _ConversationHeader extends StatelessWidget {
   final String? avatarAsset;
   final bool online;
   final String? recipientId;
+  final bool showBackButton;
 
   @override
   Widget build(BuildContext context) {
@@ -216,11 +222,14 @@ class _ConversationHeader extends StatelessWidget {
       ),
       child: Row(
         children: [
-          IconButton(
-            onPressed: () => Navigator.pop(context),
-            icon: const Icon(CupertinoIcons.chevron_left, size: 23),
-            tooltip: 'Back',
-          ),
+          if (showBackButton)
+            IconButton(
+              onPressed: () => Navigator.pop(context),
+              icon: const Icon(CupertinoIcons.chevron_left, size: 23),
+              tooltip: 'Back',
+            )
+          else
+            const SizedBox(width: 14),
           Expanded(
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
