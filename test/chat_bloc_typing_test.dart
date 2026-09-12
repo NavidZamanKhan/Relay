@@ -130,11 +130,12 @@ class MockChatRepository implements IChatRepository {
     required String name,
     required List<String> memberIds,
     required String adminId,
+    String? groupId,
     String? description,
     String? avatarUrl,
   }) async =>
       Conversation(
-        id: 'group_test',
+        id: groupId ?? 'group_test',
         name: name,
         description: description,
         avatarAsset: avatarUrl,

@@ -119,6 +119,7 @@ abstract interface class IChatRepository {
     required String name,
     required List<String> memberIds,
     required String adminId,
+    String? groupId,
     String? description,
     String? avatarUrl,
   });

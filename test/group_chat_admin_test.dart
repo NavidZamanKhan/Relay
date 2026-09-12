@@ -135,12 +135,13 @@ class _FakeChatRepo implements IChatRepository {
     required String name,
     required List<String> memberIds,
     required String adminId,
+    String? groupId,
     String? description,
     String? avatarUrl,
   }) async {
     calls.add('createGroupConversation:$name');
     return Conversation(
-      id: 'group_123',
+      id: groupId ?? 'group_123',
       name: name,
       description: description,
       avatarAsset: avatarUrl,

@@ -254,11 +254,23 @@ class _NewRelayBody extends StatelessWidget {
                   itemCount: contacts.length,
                   itemBuilder: (_, i) {
                     final c = contacts[i];
+                    final memberUid = (c.recipientId != null && c.recipientId!.isNotEmpty)
+                        ? c.recipientId!
+                        : (c.participantIds.isNotEmpty
+                            ? c.participantIds.firstWhere(
+                                (p) => p != currentUid && p.isNotEmpty,
+                                orElse: () => '',
+                              )
+                            : (!c.id.startsWith('chat_') && !c.id.startsWith('group_')
+                                ? c.id
+                                : ''));
                     return ListTile(
                       contentPadding: EdgeInsets.zero,
                       onTap: () {
                         if (state.group) {
-                          context.read<_ComposeBloc>().add(_Member(c.id));
+                          if (memberUid.isNotEmpty) {
+                            context.read<_ComposeBloc>().add(_Member(memberUid));
+                          }
                         } else {
                           final nav = Navigator.of(context);
                           final bloc = context.read<ChatBloc>();
@@ -291,10 +303,10 @@ class _NewRelayBody extends StatelessWidget {
                       ),
                       trailing: state.group
                           ? Icon(
-                              state.members.contains(c.id)
+                              memberUid.isNotEmpty && state.members.contains(memberUid)
                                   ? CupertinoIcons.checkmark_circle_fill
                                   : CupertinoIcons.circle,
-                              color: state.members.contains(c.id)
+                              color: memberUid.isNotEmpty && state.members.contains(memberUid)
                                   ? RelayColors.coralDeep
                                   : RelayColors.inkFaint,
                               size: 23,

@@ -1403,6 +1403,7 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
       if (_chatRepository != null && !_demoMode) {
         try {
           await _chatRepository.createGroupConversation(
+            groupId: e.id,
             name: e.name,
             memberIds: e.members,
             adminId: effectiveAdminId,

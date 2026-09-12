@@ -273,6 +273,24 @@ class FirestoreChatRepository implements IChatRepository {
             continue;
           }
 
+          // In group chats, messages are decoded directly without 1-on-1 pairwise shared secret
+          if (effectiveChatId.startsWith('group_')) {
+            if (rawMessage.text != null && rawMessage.text!.trim().isNotEmpty) {
+              messages.add(rawMessage);
+              continue;
+            }
+            try {
+              final decodedBytes = base64Decode(rawMessage.encryptedPayload!);
+              final decodedText = utf8.decode(decodedBytes);
+              if (decodedText.isNotEmpty) {
+                messages.add(rawMessage.copyWith(text: decodedText));
+                continue;
+              }
+            } catch (_) {}
+            messages.add(rawMessage);
+            continue;
+          }
+
           try {
             // In 1-on-1 chats, look up peer key or decrypt with peer's public key
             String? peerUid = rawMessage.isMine
@@ -499,7 +517,7 @@ class FirestoreChatRepository implements IChatRepository {
       }
     }
 
-    if (!chatExists) {
+    if (!chatExists && !effectiveChatId.startsWith('group_')) {
       String myPublicKey = _cachedMyPublicKey ?? '';
       if (myPublicKey.isEmpty) {
         try {
@@ -552,6 +570,16 @@ class FirestoreChatRepository implements IChatRepository {
     // Existing chat: fast-path atomic update with zero pre-fetch
     batch.set(messageRef, payload.toMap(useServerTimestamp: true));
 
+    if (effectiveChatId.startsWith('group_') && chatDoc == null) {
+      try {
+        chatDoc = await chatRef.get(const GetOptions(source: Source.cache));
+      } catch (_) {
+        try {
+          chatDoc = await chatRef.get().timeout(const Duration(milliseconds: 1500));
+        } catch (_) {}
+      }
+    }
+
     final updateData = <String, dynamic>{
       'lastMessage': message.text ?? 'Media message',
       'previewKind': message.kind.toDbString(),
@@ -565,6 +593,15 @@ class FirestoreChatRepository implements IChatRepository {
         'participantPublicKeys.$effectiveRecipientId': effectivePublicKey,
       'participantAvatars.${user.uid}': ?myAvatar,
     };
+
+    if (effectiveChatId.startsWith('group_') && chatDoc != null && chatDoc.exists) {
+      final participants = (chatDoc.data()?['participantIds'] as List<dynamic>?)
+          ?.map((p) => p.toString())
+          .where((p) => p != user.uid && p.isNotEmpty) ?? const <String>[];
+      for (final p in participants) {
+        updateData['unreadCount.$p'] = FieldValue.increment(1);
+      }
+    }
 
     try {
       batch.update(chatRef, updateData);
@@ -1158,7 +1195,7 @@ class FirestoreChatRepository implements IChatRepository {
       }
     }
 
-    if (!chatExists) {
+    if (!chatExists && !effectiveChatId.startsWith('group_')) {
       String myPublicKey = _cachedMyPublicKey ?? '';
       if (myPublicKey.isEmpty) {
         try {
@@ -1205,6 +1242,16 @@ class FirestoreChatRepository implements IChatRepository {
       };
       batch.set(chatRef, newConvData);
     } else {
+      if (effectiveChatId.startsWith('group_') && chatDoc == null) {
+        try {
+          chatDoc = await chatRef.get(const GetOptions(source: Source.cache));
+        } catch (_) {
+          try {
+            chatDoc = await chatRef.get().timeout(const Duration(milliseconds: 1500));
+          } catch (_) {}
+        }
+      }
+
       final updateData = <String, dynamic>{
         'lastMessage': voiceSnippet,
         'lastMessageAt': FieldValue.serverTimestamp(),
@@ -1220,6 +1267,16 @@ class FirestoreChatRepository implements IChatRepository {
           'participantPublicKeys.$effectiveRecipientId': effectivePublicKey,
         'participantAvatars.${user.uid}': ?myAvatar,
       };
+
+      if (effectiveChatId.startsWith('group_') && chatDoc != null && chatDoc.exists) {
+        final participants = (chatDoc.data()?['participantIds'] as List<dynamic>?)
+            ?.map((p) => p.toString())
+            .where((p) => p != user.uid && p.isNotEmpty) ?? const <String>[];
+        for (final p in participants) {
+          updateData['unreadCount.$p'] = FieldValue.increment(1);
+        }
+      }
+
       batch.set(chatRef, updateData, SetOptions(merge: true));
     }
 
@@ -1441,7 +1498,7 @@ class FirestoreChatRepository implements IChatRepository {
       }
     }
 
-    if (!chatExists) {
+    if (!chatExists && !effectiveChatId.startsWith('group_')) {
       final participantNames = {
         user.uid: currentUserName,
         ?effectiveRecipientId: peerName,
@@ -1483,6 +1540,16 @@ class FirestoreChatRepository implements IChatRepository {
       };
       batch.set(chatRef, newConvData);
     } else {
+      if (effectiveChatId.startsWith('group_') && chatDoc == null) {
+        try {
+          chatDoc = await chatRef.get(const GetOptions(source: Source.cache));
+        } catch (_) {
+          try {
+            chatDoc = await chatRef.get().timeout(const Duration(milliseconds: 1500));
+          } catch (_) {}
+        }
+      }
+
       final updateData = <String, dynamic>{
         'lastMessage': snippet,
         'previewKind': MessageKind.image.toDbString(),
@@ -1498,6 +1565,17 @@ class FirestoreChatRepository implements IChatRepository {
         },
         'participantAvatars.${user.uid}': ?myAvatar,
       };
+
+      if (effectiveChatId.startsWith('group_') && chatDoc != null && chatDoc.exists) {
+        final participants = (chatDoc.data()?['participantIds'] as List<dynamic>?)
+            ?.map((p) => p.toString())
+            .where((p) => p != user.uid && p.isNotEmpty) ?? const <String>[];
+        for (final p in participants) {
+          updateData['unreadCount.$p'] = FieldValue.increment(1);
+          updateData['unreadCounts.$p'] = FieldValue.increment(1);
+        }
+      }
+
       batch.set(chatRef, updateData, SetOptions(merge: true));
     }
 
@@ -1593,13 +1671,16 @@ class FirestoreChatRepository implements IChatRepository {
     required String name,
     required List<String> memberIds,
     required String adminId,
+    String? groupId,
     String? description,
     String? avatarUrl,
   }) async {
-    final effectiveGroupId =
-        'group_${DateTime.now().millisecondsSinceEpoch}_${math.Random().nextInt(9999)}';
+    final effectiveGroupId = (groupId != null && groupId.trim().isNotEmpty)
+        ? groupId.trim()
+        : 'group_${DateTime.now().millisecondsSinceEpoch}_${math.Random().nextInt(9999)}';
     final allParticipants = <String>{adminId, ...memberIds}.toList();
     final groupRef = _chatsCollection.doc(effectiveGroupId);
+    _knownExistingChats.add(effectiveGroupId);
 
     final participantNames = <String, String>{};
     final participantAvatars = <String, String>{};
