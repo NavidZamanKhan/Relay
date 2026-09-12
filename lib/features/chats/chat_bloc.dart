@@ -577,7 +577,6 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
     on<ChatNotificationReceived>((e, emit) {
       emit(state.copyWith(incomingNotification: e.payload));
-      _notificationService?.showLocalNotification(payload: e.payload);
     });
 
     _audioPositionSubscription = _audioService.positionStream.listen((pos) {
@@ -682,9 +681,6 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
           incomingNotification: incomingNotification,
         ),
       );
-      if (incomingNotification != null) {
-        _notificationService?.showLocalNotification(payload: incomingNotification);
-      }
       if (_chatRepository != null && _currentUserId != null) {
         for (final conv in e.conversations) {
           if (conv.unread > 0 && conv.delivery == DeliveryStage.sent) {
@@ -746,9 +742,6 @@ final class ChatBloc extends Bloc<ChatEvent, ChatState> {
           incomingNotification: incomingNotification,
         ),
       );
-      if (incomingNotification != null) {
-        _notificationService?.showLocalNotification(payload: incomingNotification);
-      }
       if (_chatRepository != null && _currentUserId != null) {
         final isChatActive = state.activeId == e.chatId;
         for (final m in e.messages) {

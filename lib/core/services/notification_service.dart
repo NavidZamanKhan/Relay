@@ -228,10 +228,8 @@ class RelayNotificationService implements INotificationService {
           .catchError((_) {});
 
       _fcmForegroundSub = FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-        final payload = _payloadFromRemoteMessage(message);
-        if (payload != null) {
-          showLocalNotification(payload: payload);
-        }
+        // App is actively in the foreground. Firestore real-time listeners update UI in-place.
+        // In-app notifications and alerts are suppressed per user design.
       });
 
       _fcmOpenedSub =

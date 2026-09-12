@@ -133,22 +133,7 @@ class _InAppNotificationHostState extends State<_InAppNotificationHost> {
           curr.incomingNotification != null &&
           curr.incomingNotification != prev.incomingNotification,
       listener: (context, state) {
-        final notification = state.incomingNotification;
-        if (notification == null) return;
-
-        final appState = context.read<AppBloc>().state;
-        final enabled = appState.preferences['Message notifications'] ?? true;
-        final previews = appState.preferences['Message previews'] ?? true;
-
-        if (enabled) {
-          InAppNotificationBanner.show(
-            context,
-            payload: notification,
-            showPreview: previews,
-            onTap: () => _navigateToChat(notification),
-          );
-        }
-
+        // Clear the incoming notification state without showing any in-app banner
         context.read<ChatBloc>().add(const ChatIncomingNotificationCleared());
       },
       child: widget.child,
