@@ -1,0 +1,14 @@
+{
+  "name": "relay-functions",
+  "description": "Relay Cloud Functions for Real-Time Push Notifications",
+  "version": "1.0.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "index.js",
+  "dependencies": {
+    "firebase-admin": "^12.7.0",
+    "firebase-functions": "^6.3.0"
+  },
+  "private": true
+}

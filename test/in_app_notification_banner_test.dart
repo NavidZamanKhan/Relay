@@ -221,5 +221,40 @@ void main() {
 
       expect(find.text('Navid Zaman'), findsNothing);
     });
+
+    testWidgets('tap calls onTap with authentic payload data', (tester) async {
+      NotificationPayload? tappedPayload;
+      final payload = NotificationPayload(
+        id: 'msg_sadman',
+        chatId: 'chat_navid_sadman',
+        title: 'Sadman Sakib',
+        body: 'Hey what are you doing',
+        timestamp: DateTime.now(),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Stack(
+              children: [
+                InAppNotificationBanner(
+                  payload: payload,
+                  onTap: () {
+                    tappedPayload = payload;
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Sadman Sakib'));
+      await tester.pump();
+
+      expect(tappedPayload?.title, equals('Sadman Sakib'));
+      expect(tappedPayload?.chatId, equals('chat_navid_sadman'));
+    });
   });
 }

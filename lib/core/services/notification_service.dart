@@ -165,9 +165,9 @@ class RelayNotificationService implements INotificationService {
       const androidSettings =
           AndroidInitializationSettings('@mipmap/ic_launcher');
       const darwinSettings = DarwinInitializationSettings(
-        requestAlertPermission: false,
-        requestBadgePermission: false,
-        requestSoundPermission: false,
+        requestAlertPermission: true,
+        requestBadgePermission: true,
+        requestSoundPermission: true,
       );
 
       const initSettings = InitializationSettings(
@@ -210,6 +210,22 @@ class RelayNotificationService implements INotificationService {
   ) {
     try {
       final messaging = _messaging ?? FirebaseMessaging.instance;
+
+      messaging
+          .requestPermission(
+            alert: true,
+            badge: true,
+            sound: true,
+          )
+          .then((_) {}, onError: (_) {});
+
+      messaging
+          .setForegroundNotificationPresentationOptions(
+            alert: true,
+            badge: true,
+            sound: true,
+          )
+          .catchError((_) {});
 
       _fcmForegroundSub = FirebaseMessaging.onMessage.listen((RemoteMessage message) {
         final payload = _payloadFromRemoteMessage(message);

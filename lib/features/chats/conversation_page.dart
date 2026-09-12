@@ -22,9 +22,9 @@ import '../auth/repositories/i_user_repository.dart';
 class ConversationPage extends StatelessWidget {
   const ConversationPage({
     super.key,
-    this.contactId = 'aisha',
-    this.contactName = 'Aisha',
-    this.avatarAsset = 'assets/images/aisha.png',
+    required this.contactId,
+    required this.contactName,
+    this.avatarAsset,
     this.online = true,
     this.recipientId,
   });

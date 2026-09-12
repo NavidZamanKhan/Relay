@@ -882,11 +882,16 @@ final class AuthBloc extends Bloc<AuthEvent, AuthState> {
       emit(state.copyWith(userId: user.uid, isVerifying: true));
     }
 
-    _notificationService?.getFcmToken().then((token) {
-      if (token != null) {
-        _userRepository?.updateFcmToken(uid: user.uid, token: token);
-      }
-    }).catchError((_) {});
+    final service = _notificationService;
+    if (service != null) {
+      service.requestPermissions().then((_) {
+        service.getFcmToken().then((token) {
+          if (token != null) {
+            _userRepository?.updateFcmToken(uid: user.uid, token: token);
+          }
+        }).catchError((_) {});
+      }).catchError((_) {});
+    }
 
     UserProfile? profile;
     try {

@@ -51,7 +51,10 @@ void main() {
               BlocProvider<AppBloc>(create: (_) => AppBloc()),
             ],
             child: const MaterialApp(
-              home: ConversationPage(),
+              home: ConversationPage(
+                contactId: 'aisha',
+                contactName: 'Aisha',
+              ),
             ),
           ),
         ),

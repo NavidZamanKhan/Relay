@@ -1,13 +1,16 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'app_bloc.dart';
-import 'core/motion/relay_motion.dart';
+import 'core/services/notification_service.dart';
 import 'core/theme/relay_theme.dart';
 import 'features/auth/relay_gate.dart';
 import 'features/chats/chat_bloc.dart';
 import 'features/chats/conversation_page.dart';
+import 'features/chats/models/conversation.dart';
 import 'features/chats/widgets/in_app_notification_banner.dart';
 
 final GlobalKey<NavigatorState> relayNavigatorKey = GlobalKey<NavigatorState>();
@@ -67,9 +70,61 @@ class RelayApp extends StatelessWidget {
   }
 }
 
-class _InAppNotificationHost extends StatelessWidget {
+class _InAppNotificationHost extends StatefulWidget {
   const _InAppNotificationHost({required this.child});
   final Widget child;
+
+  @override
+  State<_InAppNotificationHost> createState() => _InAppNotificationHostState();
+}
+
+class _InAppNotificationHostState extends State<_InAppNotificationHost> {
+  StreamSubscription<NotificationPayload>? _systemNotificationSub;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      try {
+        final notificationService = context.read<INotificationService?>();
+        _systemNotificationSub =
+            notificationService?.onNotificationOpened.listen((payload) {
+          _navigateToChat(payload);
+        });
+      } catch (_) {}
+    });
+  }
+
+  @override
+  void dispose() {
+    _systemNotificationSub?.cancel();
+    super.dispose();
+  }
+
+  void _navigateToChat(NotificationPayload notification) {
+    final nav = relayNavigatorKey.currentState;
+    if (nav == null) return;
+    final chatBloc = context.read<ChatBloc>();
+    final conversations = chatBloc.state.conversations;
+    final match = conversations.where((c) => c.id == notification.chatId);
+
+    final Conversation conversation = match.isNotEmpty
+        ? match.first
+        : Conversation(
+            id: notification.chatId,
+            name: notification.title.trim().isNotEmpty
+                ? notification.title.trim()
+                : 'Relay Contact',
+            avatarAsset: notification.avatarUrl,
+            lastMessage: notification.body,
+            timeLabel: '',
+            lastMessageAt: notification.timestamp,
+            unread: 0,
+            recipientId: notification.data['senderId']?.toString(),
+          );
+
+    ConversationPage.openWith(nav, chatBloc, conversation);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -90,18 +145,13 @@ class _InAppNotificationHost extends StatelessWidget {
             context,
             payload: notification,
             showPreview: previews,
-            onTap: () {
-              context.read<ChatBloc>().add(ChatOpened(notification.chatId));
-              relayNavigatorKey.currentState?.push(
-                RelayMotion.route(const ConversationPage()),
-              );
-            },
+            onTap: () => _navigateToChat(notification),
           );
         }
 
         context.read<ChatBloc>().add(const ChatIncomingNotificationCleared());
       },
-      child: child,
+      child: widget.child,
     );
   }
 }
